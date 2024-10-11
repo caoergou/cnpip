@@ -5,7 +5,6 @@ import requests
 import time
 import configparser
 
-# 镜像源列表
 MIRRORS = {
     "tuna": "https://pypi.tuna.tsinghua.edu.cn/simple",
     "aliyun": "https://mirrors.aliyun.com/pypi/simple",
@@ -14,14 +13,12 @@ MIRRORS = {
     "default": "https://pypi.org/simple"
 }
 
-# 获取 pip 配置文件路径
 def get_pip_config_path():
     if os.name == 'nt':  # Windows
         return os.path.join(os.getenv('APPDATA'), 'pip', 'pip.ini')
     else:  # Linux and macOS
         return os.path.expanduser('~/.pip/pip.conf')
 
-# 测试镜像源的连接速度
 def test_mirror_speed(url):
     try:
         start_time = time.time()
@@ -57,9 +54,8 @@ def list_mirrors():
         if speed is not None:
             print(f"{name:<{name_width}} {speed:<{time_width}.2f} {url:<{url_width}}")
         else:
-            print(f"{name:<{name_width}} {'无法连接':<{time_width}} {url:<{url_width}}")
+            print(f"{name:<{name_width}} {'error':<{time_width}} {url:<{url_width}}")
 
-# 修改或添加 pip.conf 中的 index-url
 def update_pip_config(mirror_url):
     config_path = get_pip_config_path()
     config_dir = os.path.dirname(config_path)
@@ -78,10 +74,8 @@ def update_pip_config(mirror_url):
     if 'global' not in config:
         config['global'] = {}
 
-    # 修改或添加 index-url
     config['global']['index-url'] = mirror_url
 
-    # 写回配置文件
     with open(config_path, 'w') as configfile:
         config.write(configfile)
 
