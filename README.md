@@ -41,8 +41,8 @@ cnpip list
 ustc         135.71       https://pypi.mirrors.ustc.edu.cn/simple
 aliyun       300.77       https://mirrors.aliyun.com/pypi/simple
 tuna         499.51       https://pypi.tuna.tsinghua.edu.cn/simple
-douban       error        https://pypi.douban.com/simple
 default      1252.75      https://pypi.org/simple
+douban       error        https://pypi.douban.com/simple
 ```
 
 ### 2. 自动选择最快的镜像源
@@ -166,8 +166,8 @@ Mirror Name   Time (ms)    URL
 ustc         135.71       https://pypi.mirrors.ustc.edu.cn/simple
 aliyun       300.77       https://mirrors.aliyun.com/pypi/simple
 tuna         499.51       https://pypi.tuna.tsinghua.edu.cn/simple
-douban       error        https://pypi.douban.com/simple
 default      1252.75      https://pypi.org/simple
+douban       error        https://pypi.douban.com/simple
 ```
 
 ### 2. Automatically select the fastest mirror
