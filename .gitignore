@@ -1,4 +1,4 @@
 /cnpip.egg-info/
 /build/
 /.venv/
-/.idea/
+/dist/
