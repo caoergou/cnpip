@@ -8,9 +8,9 @@ from urllib.parse import urlparse
 
 MIN_PYTHON_VERSION = (3, 6)
 if sys.version_info < MIN_PYTHON_VERSION:
-    sys.stderr.write(f"错误: 该脚本需要 Python {MIN_PYTHON_VERSION[0]}.{MIN_PYTHON_VERSION[1]} 或更高版本。\n")
-    sys.stderr.write("您也可直接使用以下命令快速安装包：")
-    sys.stderr.write("\tpip install [package_name] -i https://pypi.tuna.tsinghua.edu.cn/simple")
+    sys.stderr.write(f"错误: cnpip需要 Python {MIN_PYTHON_VERSION[0]}.{MIN_PYTHON_VERSION[1]} 或更高版本。\n")
+    sys.stderr.write("您也可直接使用以下命令快速安装包:\n")
+    sys.stderr.write(">\tpip install [package_name] -i https://pypi.tuna.tsinghua.edu.cn/simple \n")
     sys.exit(1)
 
 try:
