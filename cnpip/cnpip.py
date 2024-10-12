@@ -1,13 +1,11 @@
-import json
 import os
 import sys
 import argparse
 import requests
 import time
 import configparser
-
-with open(os.path.join(os.path.dirname(__file__), 'mirrors.json')) as f:
-    MIRRORS = json.load(f)
+from urllib.parse import urlparse
+from mirrors import MIRRORS
 
 
 def get_pip_config_path():
@@ -51,6 +49,13 @@ def list_mirrors():
         else:
             print(f"{name:<{name_width}} {'error':<{time_width}} {url:<{url_width}}")
 
+    return results  # 返回测速结果
+
+
+def extract_host_from_url(url):
+    parsed_url = urlparse(url)
+    return parsed_url.hostname
+
 
 def update_pip_config(mirror_url):
     config_path = get_pip_config_path()
@@ -68,23 +73,30 @@ def update_pip_config(mirror_url):
     if 'global' not in config:
         config['global'] = {}
 
+    # 设置 index-url
     config['global']['index-url'] = mirror_url
+
+    # 提取主机名并设置 trusted-host
+    host = extract_host_from_url(mirror_url)
+    if 'trusted-host' in config['global']:
+        existing_hosts = config['global']['trusted-host'].split()
+        if host not in existing_hosts:
+            existing_hosts.append(host)
+            config['global']['trusted-host'] = ' '.join(existing_hosts)
+    else:
+        config['global']['trusted-host'] = host
 
     with open(config_path, 'w') as configfile:
         config.write(configfile)
 
-    print(f"成功设置 pip 镜像源为 '{mirror_url}'")
+    print(f"成功设置 pip 镜像源为 '{mirror_url}'，并添加 trusted-host '{host}'")
 
 
 def set_mirror(mirror_name=None):
     if mirror_name is None:
-        results = []
-        for name, url in MIRRORS.items():
-            speed = test_mirror_speed(url)
-            results.append((name, speed, url))
+        print("未指定镜像源，正在测速并选择最快的镜像源...\n")
+        results = list_mirrors()
 
-        # 按速度从小到大排序，选择第一个可用的镜像
-        results.sort(key=lambda x: (x[1] is None, x[1]))
         fastest_mirror = next((name for name, speed, url in results if speed is not None), None)
 
         if fastest_mirror is None:
@@ -92,7 +104,7 @@ def set_mirror(mirror_name=None):
             sys.exit(1)
 
         mirror_name = fastest_mirror
-        print(f"未指定镜像源，自动选择最快的镜像源: {mirror_name}")
+        print(f"\n自动选择最快的镜像源: {mirror_name}")
 
     elif mirror_name not in MIRRORS:
         print(f"错误: 未找到镜像源 '{mirror_name}'。")
@@ -112,6 +124,9 @@ def unset_mirror():
 
         if 'global' in config and 'index-url' in config['global']:
             del config['global']['index-url']
+
+            if 'trusted-host' in config['global']:
+                del config['global']['trusted-host']
 
             if not config['global']:
                 del config['global']
