@@ -1,7 +1,13 @@
 # cnpip
 
+![PyPI](https://img.shields.io/pypi/v/cnpip)
+![PyPI - Downloads](https://img.shields.io/pypi/dm/cnpip)
+![License](https://img.shields.io/github/license/caoergou/cnpip)
+
+
 `cnpip` 是一个帮助你快速切换 `pip` 镜像源，提升 Python 包的下载速度的命令行工具。  
 它可以测试各镜像源的连接速度，并**自动选择最快的镜像源**。
+
 
 ## 快速使用
 
@@ -123,8 +129,11 @@ cnpip unset
 
 # cnpip (English)
 
-`cnpip` is a command-line tool designed specifically for users in **mainland China** to help quickly switch `pip` mirrors and improve Python package download speeds.    
+`cnpip` is a command-line tool designed specifically for users in **mainland China** to help quickly switch `pip`
+mirrors and improve Python package download speeds.       
 It tests the connection speed of various mirrors and **automatically selects the fastest one**.
+
+> **Attention: This Python package is only available in Chinese mainland.**
 
 ## Quick Start
 
@@ -140,106 +149,3 @@ cnpip set
 - **List and test mirror speeds**, sorted by connection time
 - **Quickly switch pip mirrors**, supporting *manual selection* or *automatic selection* of the fastest mirror
 - Designed specifically for users in mainland China
-
-## Supported Mirrors
-
-- [Tsinghua University TUNA](https://pypi.tuna.tsinghua.edu.cn/simple)
-- [Alibaba Cloud](https://mirrors.aliyun.com/pypi/simple)
-- [University of Science and Technology of China](https://pypi.mirrors.ustc.edu.cn/simple)
-- [Douban](https://pypi.douban.com/simple) (may not be accessible)
-- [Default](https://pypi.org/simple)
-
-
-## Usage
-
-### 1. List all available mirrors
-
-```bash
-cnpip list
-```
-
-Example output:
-
-```
-Mirror Name   Time (ms)    URL
---------------------------------------------------
-ustc         135.71       https://pypi.mirrors.ustc.edu.cn/simple
-aliyun       300.77       https://mirrors.aliyun.com/pypi/simple
-tuna         499.51       https://pypi.tuna.tsinghua.edu.cn/simple
-default      1252.75      https://pypi.org/simple
-douban       error        https://pypi.douban.com/simple
-```
-
-### 2. Automatically select the fastest mirror
-
-```bash
-cnpip set
-```
-
-Example output:
-
-```
-No mirror specified, automatically selecting the fastest mirror: ustc
-Successfully set pip mirror to 'https://pypi.mirrors.ustc.edu.cn/simple'
-```
-
-### 3. Manually select a specific mirror
-
-```bash
-cnpip set <mirror_name>
-```
-
-Example:
-
-```bash
-cnpip set tuna
-```
-
-Output:
-
-```
-Successfully set pip mirror to 'https://pypi.tuna.tsinghua.edu.cn/simple'
-```
-
-### 4. Reset to the default pip mirror
-
-```bash
-cnpip unset
-```
-
-Output:
-
-```
-Successfully reset pip mirror to the default.
-```
-
-## Configuration File
-
-`cnpip` modifies or creates the `pip` configuration file to set the mirror:
-
-- **Linux/macOS**: `~/.pip/pip.conf`
-- **Windows**: `%APPDATA%\pip\pip.ini`
-
-When setting a mirror, `cnpip` ensures that only the `index-url` is modified or added, leaving other configurations intact.
-
-## FAQ
-
-### 1. Why can't I connect to some mirrors?
-
-Some mirrors (like Douban) may be inaccessible due to network issues or problems with the mirror itself. In such cases, `cnpip` will display "error" and place the mirror at the bottom of the speed test results.
-
-### 2. How do I reset to the default pip mirror?
-
-You can use the `unset` command to reset to the default pip mirror:
-
-```bash
-cnpip unset
-```
-
-### 3. Will `cnpip` overwrite my `pip.conf` file?
-
-No, `cnpip` only modifies or adds the `index-url` configuration, leaving other settings intact.
-
-## License
-
-This project is licensed under the [MIT License](LICENSE).
