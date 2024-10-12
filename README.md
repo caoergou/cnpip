@@ -4,10 +4,8 @@
 ![PyPI - Downloads](https://img.shields.io/pypi/dm/cnpip)
 ![License](https://img.shields.io/github/license/caoergou/cnpip)
 
-
 `cnpip` 是一个帮助你快速切换 `pip` 镜像源，提升 Python 包的下载速度的命令行工具。  
 它可以测试各镜像源的连接速度，并**自动选择最快的镜像源**。
-
 
 ## 快速使用
 
@@ -26,10 +24,11 @@ cnpip set
 ## 支持的镜像源
 
 - [清华大学 TUNA](https://pypi.tuna.tsinghua.edu.cn/simple)
-- [阿里云](https://mirrors.aliyun.com/pypi/simple)
-- [中国科学技术大学](https://pypi.mirrors.ustc.edu.cn/simple)
-- [豆瓣](https://pypi.douban.com/simple)（目前可能无法连接）
-- [默认源](https://pypi.org/simple)
+- [中国科学技术大学 USTC](https://pypi.mirrors.ustc.edu.cn/simple)
+- [阿里云 Aliyun](https://mirrors.aliyun.com/pypi/simple)
+- [腾讯 Tencent](https://mirrors.cloud.tencent.com/pypi/simple)
+- [华为 Huawei](https://repo.huaweicloud.com/repository/pypi/simple)
+- [默认源 PyPi](https://pypi.org/simple)
 
 ## 使用方法
 
@@ -48,7 +47,7 @@ ustc         135.71       https://pypi.mirrors.ustc.edu.cn/simple
 aliyun       300.77       https://mirrors.aliyun.com/pypi/simple
 tuna         499.51       https://pypi.tuna.tsinghua.edu.cn/simple
 default      1252.75      https://pypi.org/simple
-douban       error        https://pypi.douban.com/simple
+tencent      1253.07      https://mirrors.cloud.tencent.com/pypi/simple
 ```
 
 ### 2. 自动选择最快的镜像源
