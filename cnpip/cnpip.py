@@ -6,7 +6,7 @@ import requests
 import time
 import configparser
 
-with open(os.path.join(os.path.dirname(__file__), 'mirrors.txt')) as f:
+with open(os.path.join(os.path.dirname(__file__), 'mirrors.json')) as f:
     MIRRORS = json.load(f)
 
 
