@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import argparse
@@ -5,13 +6,8 @@ import requests
 import time
 import configparser
 
-MIRRORS = {
-    "tuna": "https://pypi.tuna.tsinghua.edu.cn/simple",
-    "aliyun": "https://mirrors.aliyun.com/pypi/simple",
-    "ustc": "https://pypi.mirrors.ustc.edu.cn/simple",
-    "douban": "https://pypi.douban.com/simple",
-    "default": "https://pypi.org/simple"
-}
+with open(os.path.join(os.path.dirname(__file__), 'mirrors.txt')) as f:
+    MIRRORS = json.load(f)
 
 
 def get_pip_config_path():
