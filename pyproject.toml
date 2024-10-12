@@ -1,13 +1,18 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "cnpip"
 version = "1.0.3"
 authors = [
-  { name="caoergou", email="mrjingcheng@foxmail.com" },
+    { name = "caoergou", email = "mrjingcheng@foxmail.com" },
 ]
 description = "帮助中国用户快速切换 pip 镜像源，提升下载速度的命令行工具.\nA tool that helps Chinese users quickly switch pip mirrors to improve download speeds."
 readme = "README.md"
 requires-python = ">=3.7"
 keywords = ["pip", "mirror", "China", "speed", "cli"]
+dependencies = ["requests"]
 classifiers = [
     "License :: OSI Approved :: MIT License",
     "Intended Audience :: Developers",
@@ -26,3 +31,6 @@ classifiers = [
 [project.urls]
 Homepage = "https://github.com/caoergou/cnpip"
 Issues = "https://github.com/caoergou/cnpip/issues"
+
+[project.scripts]
+cnpip = "cnpip.cnpip:main"
