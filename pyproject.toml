@@ -8,16 +8,18 @@ version = "1.1.0"
 authors = [
     { name = "caoergou", email = "mrjingcheng@foxmail.com" },
 ]
-description = "帮助中国用户快速切换 pip 镜像源，提升下载速度的命令行工具.\nA tool that helps Chinese users quickly switch pip mirrors to improve download speeds."
+description = """帮助中国用户快速切换 pip 镜像源，提升下载速度的命令行工具.
+A tool helps Chinese users quickly switch pip mirrors to improve download speeds."""
 readme = "README.md"
 requires-python = ">=3.7"
-keywords = ["pip", "mirror", "China", "speed", "cli"]
+keywords = ["pip", "mirror", "Chinese", "speed", "cli"]
 dependencies = ["requests"]
 classifiers = [
     "License :: OSI Approved :: MIT License",
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.6",
     "Programming Language :: Python :: 3.7",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
