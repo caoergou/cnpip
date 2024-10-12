@@ -29,4 +29,7 @@ setup(
     install_requires=[
         "requests"
     ],
+    package_data={
+        "cnpip": ["mirrors.json"]
+    }
 )
