@@ -25,7 +25,7 @@ from .mirrors import MIRRORS
 
 # 异步测速函数
 if ASYNC_SUPPORTED:
-    async def test_mirror_speed_async(session, name, url):
+    async def measure_mirror_speed_async(session, name, url):
         try:
             start_time = time.time()
             async with session.head(url, timeout=10) as response:
@@ -48,7 +48,7 @@ if ASYNC_SUPPORTED:
 
         async with aiohttp.ClientSession(timeout=timeout,
                                          connector=connector) as session:
-            tasks = [test_mirror_speed_async(session, name, url)
+            tasks = [measure_mirror_speed_async(session, name, url)
                      for name, url in MIRRORS.items()]
             print("正在异步测速，请稍候...")
             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -56,30 +56,29 @@ if ASYNC_SUPPORTED:
         # 过滤掉异常结果
         valid_results = [r for r in results if isinstance(r, tuple)]
         valid_results.sort(key=lambda x: (x[1] is None, x[1]))
-
-        print(f"Total time: {round((time.monotonic() - start_time) * 1000, 2)} ms")
+        print_mirror_results(valid_results)
+        print(f"异步测速总耗时: {round((time.monotonic() - start_time) * 1000, 2)} ms")
         return valid_results
 
 
-# 同步测速函数
-def test_mirror_speed_sync(name, url):
+def measure_mirror_speed_sync(name, url):
+    """同步测速函数"""
     try:
-        start_time = time.time()
+        start_time = time.monotonic()
         response = requests.head(url, timeout=10)
         response.raise_for_status()
-        end_time = time.time()
-        return name, round((end_time - start_time) * 1000, 2), url
+        return name, round((time.monotonic() - start_time) * 1000, 2), url
     except requests.RequestException as e:
         print(f"同步测速失败: {name} ({url}) - {e}")
         return name, None, url
 
 
 def list_mirrors_sync():
-    start_time = time.time()
+    """展示镜像源列表并同步测速"""
+    start_time = time.monotonic()
     print("正在同步测速，请稍候...")
-    results = [test_mirror_speed_sync(name, url) for name, url in MIRRORS.items()]
-    end_time = time.time()
-    total_time = round((end_time - start_time) * 1000, 2)
+    results = [measure_mirror_speed_sync(name, url) for name, url in MIRRORS.items()]
+    total_time = round((time.monotonic() - start_time) * 1000, 2)
     results.sort(key=lambda x: (x[1] is None, x[1]))
     print_mirror_results(results)
     print(f"\n同步测速总耗时: {total_time} ms")
