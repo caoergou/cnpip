@@ -1,8 +1,7 @@
-import os
+import subprocess
 import sys
 import argparse
 import time
-import configparser
 import asyncio
 from urllib.parse import urlparse
 
@@ -14,7 +13,7 @@ if sys.version_info < MIN_PYTHON_VERSION:
     sys.exit(1)
 
 try:
-    import aiohttp
+    import aiohttp  # noqa
 
     ASYNC_SUPPORTED = True
 except ImportError:
@@ -23,18 +22,6 @@ except ImportError:
     ASYNC_SUPPORTED = False
 
 from .mirrors import MIRRORS
-
-
-def get_pip_config_path():
-    if os.name == 'nt':  # Windows
-        appdata = os.getenv('APPDATA')
-        if appdata and os.path.exists(appdata):
-            return os.path.join(appdata, 'pip', 'pip.ini')
-        else:
-            return os.path.expanduser('~\\pip\\pip.ini')
-    else:  # Linux and macOS
-        return os.path.expanduser('~/.pip/pip.conf')
-
 
 # 异步测速函数
 if ASYNC_SUPPORTED:
@@ -54,17 +41,24 @@ if ASYNC_SUPPORTED:
 
 
     async def list_mirrors_async():
-        start_time = time.time()
-        async with aiohttp.ClientSession() as session:
-            tasks = [test_mirror_speed_async(session, name, url) for name, url in MIRRORS.items()]
+        """改进的异步测速主函数"""
+        start_time = time.monotonic()
+        timeout = aiohttp.ClientTimeout(total=30)
+        connector = aiohttp.TCPConnector(limit=5)  # 限制并发连接数
+
+        async with aiohttp.ClientSession(timeout=timeout,
+                                         connector=connector) as session:
+            tasks = [test_mirror_speed_async(session, name, url)
+                     for name, url in MIRRORS.items()]
             print("正在异步测速，请稍候...")
             results = await asyncio.gather(*tasks, return_exceptions=True)
-        end_time = time.time()
-        total_time = round((end_time - start_time) * 1000, 2)
-        results.sort(key=lambda x: (x[1] is None, x[1]))
-        print_mirror_results(results)
-        print(f"异步测速总耗时: {total_time} ms")
-        return results
+
+        # 过滤掉异常结果
+        valid_results = [r for r in results if isinstance(r, tuple)]
+        valid_results.sort(key=lambda x: (x[1] is None, x[1]))
+
+        print(f"Total time: {round((time.monotonic() - start_time) * 1000, 2)} ms")
+        return valid_results
 
 
 # 同步测速函数
@@ -108,61 +102,47 @@ def print_mirror_results(results):
             print(f"{name:<{name_width}}\t{'error':<{time_width}}\t{url:<{url_width}}")
 
 
-def extract_host_from_url(url):
-    return urlparse(url).hostname
+def is_pip_installed():
+    """检查 pip 是否安装"""
+    try:
+        subprocess.run([sys.executable, '-m', 'pip', '--version'],
+                       check=True,
+                       stdout=subprocess.PIPE,
+                       stderr=subprocess.PIPE)
+        return True
+    except subprocess.CalledProcessError:
+        return False
 
 
 def update_pip_config(mirror_url):
-    config_path = get_pip_config_path()
-    os.makedirs(os.path.dirname(config_path), exist_ok=True)
-
-    config = configparser.ConfigParser()
-
-    if os.path.exists(config_path):
-        config.read(config_path)
-
-    if 'global' not in config:
-        config['global'] = {}
-
-    config['global']['index-url'] = mirror_url
-
-    host = extract_host_from_url(mirror_url)
-    if 'trusted-host' in config['global']:
-        existing_hosts = config['global']['trusted-host'].split()
-        if host not in existing_hosts:
-            existing_hosts.append(host)
-            config['global']['trusted-host'] = ' '.join(existing_hosts)
-    else:
-        config['global']['trusted-host'] = host
-
-    with open(config_path, 'w') as configfile:
-        config.write(configfile)
-
-    print(f"成功设置 pip 镜像源为 '{mirror_url}'，并添加 trusted-host '{host}'")
+    # 提取主机名
+    host = urlparse(mirror_url).netloc
+    try:
+        subprocess.run([sys.executable, '-m', 'pip', 'config', 'set', 'global.index-url', mirror_url], check=True)
+        subprocess.run([sys.executable, '-m', 'pip', 'config', 'set', 'global.trusted-host', host], check=True)
+        print(f"成功设置 pip 镜像源为 '{mirror_url}'，并添加 trusted-host '{host}'")
+    except subprocess.CalledProcessError as e:
+        print(f"更新 pip 配置时出错: {e}, 详细报错如下：")
+        raise e
 
 
-def unset_mirror():
-    """取消 pip 镜像源设置"""
-    config_path = get_pip_config_path()
-    if os.path.exists(config_path):
-        config = configparser.ConfigParser()
-        config.read(config_path)
-        if 'global' in config:
-            config['global'].pop('index-url', None)
-            config['global'].pop('trusted-host', None)
-            if not config['global']:
-                config.remove_section('global')
-            with open(config_path, 'w') as configfile:
-                config.write(configfile)
-            print("成功取消 pip 镜像源设置，已恢复为默认源")
-        else:
-            print("未设置自定义 pip 镜像源")
-    else:
-        print("未设置自定义 pip 镜像源")
+def unset_pip_mirror() -> None:
+    """取消pip镜像源设置"""
+    try:
+        subprocess.run([sys.executable, '-m', 'pip', 'config', 'unset', 'global.index-url'], check=True)
+        subprocess.run([sys.executable, '-m', 'pip', 'config', 'unset', 'global.trusted-host'], check=True)
+        print("成功取消 pip 镜像源设置，已恢复为默认源")
+    except subprocess.CalledProcessError as e:
+        print(f"取消 pip 镜像源设置时出错: {e}, 详细报错如下：")
+        raise e
 
 
 def main():
     """主函数，解析命令行参数并执行相应操作"""
+    if not is_pip_installed():
+        print("错误: 未找到 pip，无法设置镜像源")
+        sys.exit(1)
+
     parser = argparse.ArgumentParser(description="轻松管理 pip 镜像源。")
     parser.add_argument("command", choices=["list", "set", "unset"], help="要执行的命令")
     parser.add_argument("mirror", nargs="?", help="要设置的镜像源名称 (仅用于 'set' 命令)")
@@ -176,7 +156,7 @@ def main():
             list_mirrors_sync()
     elif args.command == "set":
         if args.mirror is None:
-            print("未指定镜像源，正在测速并选择最快的镜像源...")
+            print("未指定镜像源，即将测速并选择最快的镜像源...")
             if ASYNC_SUPPORTED:
                 results = asyncio.run(list_mirrors_async())
             else:
@@ -200,7 +180,7 @@ def main():
         mirror_url = MIRRORS[mirror_name]
         update_pip_config(mirror_url)
     elif args.command == "unset":
-        unset_mirror()
+        unset_pip_mirror()
         sys.exit(0)
 
 
