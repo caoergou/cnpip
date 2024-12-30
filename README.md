@@ -28,6 +28,7 @@ cnpip set
 - [阿里云 Aliyun](https://mirrors.aliyun.com/pypi/simple)
 - [腾讯 Tencent](https://mirrors.cloud.tencent.com/pypi/simple)
 - [华为 Huawei](https://repo.huaweicloud.com/repository/pypi/simple)
+- [西湖大学 Westlake University](https://mirrors.westlake.edu.cn)
 - [默认源 PyPi](https://pypi.org/simple)
 
 ## 使用方法
