@@ -13,7 +13,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        ref: ${{ github.event.release.tag_name }}
+        ref: main
         fetch-depth: 0
     
     - name: Get version from tag
@@ -22,19 +22,17 @@ jobs:
 
     - name: Update version in files
       run: |
-        git checkout ${{ github.event.release.tag_name }}
-
-        # 更新 pyproject.toml 中的版本号
+        # Update version in pyproject.toml
         sed -i "s/^version = .*/version = \"$VERSION\"/" pyproject.toml
         
-        # 更新 setup.py 中的版本号
+        # Update version in setup.py
         sed -i "s/version=\".*\"/version=\"$VERSION\"/" setup.py
         
         # 提交更改
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
         git config --local user.name "github-actions[bot]"
         git commit -am "chore: bump version to $VERSION"
-        git push origin ${{ github.event.release.tag_name }}
+        git push origin main
 
     - name: Set up Python
       uses: actions/setup-python@v3
