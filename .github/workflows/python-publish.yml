@@ -12,6 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.release.tag_name }}
+        fetch-depth: 0
     
     - name: Get version from tag
       id: get_version
@@ -19,6 +22,8 @@ jobs:
 
     - name: Update version in files
       run: |
+        git checkout ${{ github.event.release.tag_name }}
+
         # 更新 pyproject.toml 中的版本号
         sed -i "s/^version = .*/version = \"$VERSION\"/" pyproject.toml
         
@@ -29,7 +34,7 @@ jobs:
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
         git config --local user.name "github-actions[bot]"
         git commit -am "chore: bump version to $VERSION"
-        git push
+        git push origin ${{ github.event.release.tag_name }}
 
     - name: Set up Python
       uses: actions/setup-python@v3
