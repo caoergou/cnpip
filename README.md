@@ -29,6 +29,7 @@ cnpip set
 - [腾讯 Tencent](https://mirrors.cloud.tencent.com/pypi/simple)
 - [华为 Huawei](https://repo.huaweicloud.com/repository/pypi/simple)
 - [西湖大学 Westlake University](https://mirrors.westlake.edu.cn)
+- [南方科技大学 SUSTech](https://mirrors.sustech.edu.cn/pypi/web/simple)
 - [默认源 PyPi](https://pypi.org/simple)
 
 ## 使用方法

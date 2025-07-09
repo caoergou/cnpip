@@ -5,5 +5,6 @@ MIRRORS = {
     "tencent": "https://mirrors.cloud.tencent.com/pypi/simple",
     "huawei": "https://repo.huaweicloud.com/repository/pypi/simple",
     "westlake": "https://mirrors.westlake.edu.cn/pypi/simple",
+    "sustech": "https://mirrors.sustech.edu.cn/pypi/web/simple",
     "default": "https://pypi.org/simple"
 }
