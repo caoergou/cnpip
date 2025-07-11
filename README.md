@@ -97,7 +97,7 @@ cnpip unset
 
 ## 配置文件
 
-`cnpip` 会修改或创建 `pip` 的配置文件来设置镜像源：
+`cnpip` 会修改或创建 pip 的配置文件来设置镜像源：
 
 - **Linux/macOS**: `~/.pip/pip.conf`
 - **Windows**: `%APPDATA%\pip\pip.ini`
@@ -110,15 +110,15 @@ cnpip unset
 
 某些镜像源（如豆瓣）可能由于网络问题或镜像源本身的原因无法连接。在这种情况下，`cnpip` 会显示“无法连接”，并将其排在速度测试结果的最后。
 
-### 2. 如何恢复为默认的 `pip` 镜像源？
+### 2. 如何恢复为默认的镜像源？
 
-使用 `unset` 命令恢复为默认的 `pip` 镜像源：
+使用 `unset` 命令恢复为默认的镜像源：
 
 ```bash
 cnpip unset
 ```
 
-### 3. `cnpip` 会覆盖我的 `pip.conf` 文件吗？
+### 3. `cnpip` 会覆盖我的配置文件吗？
 
 不会。`cnpip` 只会修改或添加 `index-url` 配置项，其他配置项会被保留。
 
@@ -130,15 +130,10 @@ cnpip unset
 
 # cnpip (English)
 
-`cnpip` is a command-line tool designed specifically for users in **mainland China** to help quickly switch `pip`
-mirrors and improve Python package download speeds.       
+`cnpip` is a command-line tool designed specifically for users in **mainland China** to help quickly switch `pip` mirrors and improve Python package download speeds.       
 It tests the connection speed of various mirrors and **automatically selects the fastest one**.
 
-> **Attention: This Python package is only available in Chinese mainland.**
-
 ## Quick Start
-
-Run the following commands to quickly switch to the fastest mirror:
 
 ```bash
 pip install cnpip
@@ -149,4 +144,3 @@ cnpip set
 
 - **List and test mirror speeds**, sorted by connection time
 - **Quickly switch pip mirrors**, supporting *manual selection* or *automatic selection* of the fastest mirror
-- Designed specifically for users in mainland China
