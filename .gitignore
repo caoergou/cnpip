@@ -2,3 +2,17 @@
 /build/
 /.venv/
 /dist/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.coverage
+.pytest_cache/
+.tox/
+.cache/
+.vscode/
+.idea/
+*.egg-info/
+.uv/

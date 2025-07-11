@@ -3,7 +3,10 @@ import sys
 import argparse
 import time
 import asyncio
+import os
+import platform
 from urllib.parse import urlparse
+from pathlib import Path
 
 MIN_PYTHON_VERSION = (3, 6)
 if sys.version_info < MIN_PYTHON_VERSION:
@@ -101,6 +104,18 @@ def print_mirror_results(results):
             print(f"{name:<{name_width}}\t{'error':<{time_width}}\t{url:<{url_width}}")
 
 
+def is_uv_available():
+    """检查 uv 是否安装"""
+    try:
+        subprocess.run(['uv', '--version'], 
+                       check=True, 
+                       stdout=subprocess.PIPE, 
+                       stderr=subprocess.PIPE)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
+
 def is_pip_installed():
     """检查 pip 是否安装"""
     try:
@@ -111,6 +126,104 @@ def is_pip_installed():
         return True
     except subprocess.CalledProcessError:
         return False
+
+
+def get_uv_config_path():
+    """获取 uv 配置文件路径"""
+    if platform.system() == "Windows":
+        config_dir = Path.home() / "AppData" / "Roaming" / "uv"
+    else:
+        config_dir = Path.home() / ".config" / "uv"
+    
+    config_dir.mkdir(parents=True, exist_ok=True)
+    return config_dir / "uv.toml"
+
+
+def update_uv_config(mirror_url):
+    """更新 uv 配置"""
+    config_path = get_uv_config_path()
+    
+    # 读取现有配置
+    config_content = ""
+    if config_path.exists():
+        config_content = config_path.read_text(encoding='utf-8')
+    
+    # 检查是否已有 [pip] 段
+    if '[pip]' in config_content:
+        # 替换现有的 index-url
+        lines = config_content.split('\n')
+        new_lines = []
+        in_pip_section = False
+        index_url_updated = False
+        
+        for line in lines:
+            if line.strip() == '[pip]':
+                in_pip_section = True
+                new_lines.append(line)
+            elif line.strip().startswith('[') and line.strip() != '[pip]':
+                in_pip_section = False
+                new_lines.append(line)
+            elif in_pip_section and line.strip().startswith('index-url'):
+                new_lines.append(f'index-url = "{mirror_url}"')
+                index_url_updated = True
+            else:
+                new_lines.append(line)
+        
+        if in_pip_section and not index_url_updated:
+            new_lines.append(f'index-url = "{mirror_url}"')
+        
+        config_content = '\n'.join(new_lines)
+    else:
+        # 添加新的 [pip] 段
+        if config_content and not config_content.endswith('\n'):
+            config_content += '\n'
+        config_content += f'[pip]\nindex-url = "{mirror_url}"\n'
+    
+    # 写入配置文件
+    config_path.write_text(config_content, encoding='utf-8')
+    print(f"成功设置 uv 镜像源为 '{mirror_url}'")
+
+
+def unset_uv_config():
+    """取消 uv 镜像源设置"""
+    config_path = get_uv_config_path()
+    
+    if not config_path.exists():
+        print("uv 配置文件不存在，无需取消设置")
+        return
+    
+    config_content = config_path.read_text(encoding='utf-8')
+    
+    # 移除 [pip] 段中的 index-url
+    lines = config_content.split('\n')
+    new_lines = []
+    in_pip_section = False
+    
+    for line in lines:
+        if line.strip() == '[pip]':
+            in_pip_section = True
+            # 检查下一行是否只有 index-url，如果是则跳过整个 [pip] 段
+            continue
+        elif line.strip().startswith('[') and line.strip() != '[pip]':
+            in_pip_section = False
+            new_lines.append(line)
+        elif in_pip_section and line.strip().startswith('index-url'):
+            # 跳过 index-url 行
+            continue
+        else:
+            if not in_pip_section:
+                new_lines.append(line)
+    
+    # 移除空行
+    while new_lines and new_lines[-1].strip() == '':
+        new_lines.pop()
+    
+    if new_lines:
+        config_path.write_text('\n'.join(new_lines) + '\n', encoding='utf-8')
+    else:
+        config_path.unlink()  # 删除空的配置文件
+    
+    print("成功取消 uv 镜像源设置，已恢复为默认源")
 
 
 def update_pip_config(mirror_url):
@@ -136,13 +249,83 @@ def unset_pip_mirror() -> None:
         raise e
 
 
+def update_mirror_config(mirror_url):
+    """更新包管理器镜像源配置（支持 uv 和 pip）"""
+    uv_available = is_uv_available()
+    pip_available = is_pip_installed()
+    
+    success_count = 0
+    
+    if uv_available:
+        try:
+            update_uv_config(mirror_url)
+            success_count += 1
+        except Exception as e:
+            print(f"更新 uv 配置时出错: {e}")
+    
+    if pip_available:
+        try:
+            update_pip_config(mirror_url)
+            success_count += 1
+        except Exception as e:
+            print(f"更新 pip 配置时出错: {e}")
+    
+    if success_count == 0:
+        print("错误: 无法更新任何包管理器的配置")
+        sys.exit(1)
+    
+    if uv_available and pip_available:
+        print(f"已同时更新 uv 和 pip 的镜像源配置")
+    elif uv_available:
+        print("已更新 uv 镜像源配置（推荐使用 uv 以获得更快的包管理体验）")
+    else:
+        print("已更新 pip 镜像源配置（建议安装 uv 以获得更快的包管理体验：pip install uv）")
+
+
+def unset_mirror_config():
+    """取消包管理器镜像源设置（支持 uv 和 pip）"""
+    uv_available = is_uv_available()
+    pip_available = is_pip_installed()
+    
+    success_count = 0
+    
+    if uv_available:
+        try:
+            unset_uv_config()
+            success_count += 1
+        except Exception as e:
+            print(f"取消 uv 配置时出错: {e}")
+    
+    if pip_available:
+        try:
+            unset_pip_mirror()
+            success_count += 1
+        except Exception as e:
+            print(f"取消 pip 配置时出错: {e}")
+    
+    if success_count == 0:
+        print("错误: 无法取消任何包管理器的配置")
+        sys.exit(1)
+    
+    if uv_available and pip_available:
+        print("已同时取消 uv 和 pip 的镜像源设置")
+    elif uv_available:
+        print("已取消 uv 镜像源设置")
+    else:
+        print("已取消 pip 镜像源设置")
+
+
 def main():
     """主函数，解析命令行参数并执行相应操作"""
-    if not is_pip_installed():
-        print("错误: 未找到 pip，无法设置镜像源")
+    uv_available = is_uv_available()
+    pip_available = is_pip_installed()
+    
+    if not uv_available and not pip_available:
+        print("错误: 未找到 uv 或 pip，无法设置镜像源")
+        print("建议安装 uv 以获得更快的包管理体验：pip install uv")
         sys.exit(1)
 
-    parser = argparse.ArgumentParser(description="轻松管理 pip 镜像源。")
+    parser = argparse.ArgumentParser(description="轻松管理包管理器镜像源（支持 uv 和 pip）。")
     parser.add_argument("command", choices=["list", "set", "unset"], help="要执行的命令")
     parser.add_argument("mirror", nargs="?", help="要设置的镜像源名称 (仅用于 'set' 命令)")
 
@@ -177,9 +360,9 @@ def main():
             sys.exit(1)
 
         mirror_url = MIRRORS[mirror_name]
-        update_pip_config(mirror_url)
+        update_mirror_config(mirror_url)
     elif args.command == "unset":
-        unset_pip_mirror()
+        unset_mirror_config()
         sys.exit(0)
 
 
