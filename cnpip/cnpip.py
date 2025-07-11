@@ -181,7 +181,6 @@ def update_uv_config(mirror_url):
     
     # 写入配置文件
     config_path.write_text(config_content, encoding='utf-8')
-    print(f"成功设置 uv 镜像源为 '{mirror_url}'")
 
 
 def unset_uv_config():
@@ -222,8 +221,6 @@ def unset_uv_config():
         config_path.write_text('\n'.join(new_lines) + '\n', encoding='utf-8')
     else:
         config_path.unlink()  # 删除空的配置文件
-    
-    print("成功取消 uv 镜像源设置，已恢复为默认源")
 
 
 def update_pip_config(mirror_url):
@@ -274,12 +271,8 @@ def update_mirror_config(mirror_url):
         print("错误: 无法更新任何包管理器的配置")
         sys.exit(1)
     
-    if uv_available and pip_available:
-        print(f"已同时更新 uv 和 pip 的镜像源配置")
-    elif uv_available:
-        print("已更新 uv 镜像源配置（推荐使用 uv 以获得更快的包管理体验）")
-    else:
-        print("已更新 pip 镜像源配置（建议安装 uv 以获得更快的包管理体验：pip install uv）")
+    # 只向用户显示 pip 相关信息
+    print("成功设置 pip 镜像源")
 
 
 def unset_mirror_config():
@@ -307,12 +300,8 @@ def unset_mirror_config():
         print("错误: 无法取消任何包管理器的配置")
         sys.exit(1)
     
-    if uv_available and pip_available:
-        print("已同时取消 uv 和 pip 的镜像源设置")
-    elif uv_available:
-        print("已取消 uv 镜像源设置")
-    else:
-        print("已取消 pip 镜像源设置")
+    # 只向用户显示 pip 相关信息
+    print("成功取消 pip 镜像源设置，已恢复为默认源")
 
 
 def main():
@@ -321,11 +310,10 @@ def main():
     pip_available = is_pip_installed()
     
     if not uv_available and not pip_available:
-        print("错误: 未找到 uv 或 pip，无法设置镜像源")
-        print("建议安装 uv 以获得更快的包管理体验：pip install uv")
+        print("错误: 未找到 pip，无法设置镜像源")
         sys.exit(1)
 
-    parser = argparse.ArgumentParser(description="轻松管理包管理器镜像源（支持 uv 和 pip）。")
+    parser = argparse.ArgumentParser(description="轻松管理 pip 镜像源。")
     parser.add_argument("command", choices=["list", "set", "unset"], help="要执行的命令")
     parser.add_argument("mirror", nargs="?", help="要设置的镜像源名称 (仅用于 'set' 命令)")
 
