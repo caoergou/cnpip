@@ -27,10 +27,5 @@ A tool helps Chinese users quickly switch pip mirrors to improve download speeds
         "Topic :: System :: Installation/Setup",
         "Topic :: Utilities",
     ],
-    install_requires=[
-        "requests"
-    ],
-    extras_require={
-        "async": ["aiohttp"]
-    }
+    install_requires=[],
 )

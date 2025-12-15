@@ -2,86 +2,50 @@ import subprocess
 import sys
 import argparse
 import time
-import asyncio
+import urllib.request
+import urllib.error
 from urllib.parse import urlparse
+from concurrent.futures import ThreadPoolExecutor
+
+from .mirrors import MIRRORS
 
 MIN_PYTHON_VERSION = (3, 6)
 if sys.version_info < MIN_PYTHON_VERSION:
     sys.stderr.write(f"错误: cnpip需要 Python {MIN_PYTHON_VERSION[0]}.{MIN_PYTHON_VERSION[1]} 或更高版本。\n")
-    sys.stderr.write("您也可直接使用以下命令快速安装包:\n")
-    sys.stderr.write(">\tpip install [package_name] -i https://pypi.tuna.tsinghua.edu.cn/simple \n")
     sys.exit(1)
 
-try:
-    import aiohttp  # noqa
 
-    ASYNC_SUPPORTED = True
-except ImportError:
-    import requests
-
-    ASYNC_SUPPORTED = False
-
-from .mirrors import MIRRORS
-
-# 异步测速函数
-if ASYNC_SUPPORTED:
-    async def measure_mirror_speed_async(session, name, url):
-        try:
-            start_time = time.time()
-            async with session.head(url, timeout=10) as response:
-                if 200 <= response.status < 400:
-                    end_time = time.time()
-                    return name, round((end_time - start_time) * 1000, 2), url
-                else:
-                    print(f"异步测速失败: {name} ({url}) - HTTP {response.status}")
-                    return name, None, url
-        except Exception as e:
-            print(f"异步测速失败: {name} ({url}) - {e}")
-            return name, None, url
-
-
-    async def list_mirrors_async():
-        """改进的异步测速主函数"""
-        start_time = time.monotonic()
-        timeout = aiohttp.ClientTimeout(total=30)
-        connector = aiohttp.TCPConnector(limit=5)  # 限制并发连接数
-
-        async with aiohttp.ClientSession(timeout=timeout,
-                                         connector=connector) as session:
-            tasks = [measure_mirror_speed_async(session, name, url)
-                     for name, url in MIRRORS.items()]
-            print("正在异步测速，请稍候...")
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # 过滤掉异常结果
-        valid_results = [r for r in results if isinstance(r, tuple)]
-        valid_results.sort(key=lambda x: (x[1] is None, x[1]))
-        print_mirror_results(valid_results)
-        print(f"异步测速总耗时: {round((time.monotonic() - start_time) * 1000, 2)} ms")
-        return valid_results
-
-
-def measure_mirror_speed_sync(name, url):
-    """同步测速函数"""
+def measure_mirror_speed(name, url):
+    """测速函数"""
     try:
         start_time = time.monotonic()
-        response = requests.head(url, timeout=10)
-        response.raise_for_status()
-        return name, round((time.monotonic() - start_time) * 1000, 2), url
-    except requests.RequestException as e:
-        print(f"同步测速失败: {name} ({url}) - {e}")
+        # Use a short timeout to fail fast
+        req = urllib.request.Request(url, method='HEAD')
+        with urllib.request.urlopen(req, timeout=5) as response:
+            if 200 <= response.status < 400:
+                end_time = time.monotonic()
+                return name, round((end_time - start_time) * 1000, 2), url
+            else:
+                return name, None, url
+    except Exception:
+        # Catching all exceptions including timeout and connection errors
         return name, None, url
 
 
-def list_mirrors_sync():
-    """展示镜像源列表并同步测速"""
+def list_mirrors():
+    """展示镜像源列表并测速"""
     start_time = time.monotonic()
-    print("正在同步测速，请稍候...")
-    results = [measure_mirror_speed_sync(name, url) for name, url in MIRRORS.items()]
+    print("正在测速，请稍候...")
+
+    with ThreadPoolExecutor(max_workers=len(MIRRORS)) as executor:
+        futures = [executor.submit(measure_mirror_speed, name, url) for name, url in MIRRORS.items()]
+        results = [f.result() for f in futures]
+
     total_time = round((time.monotonic() - start_time) * 1000, 2)
+    # sort by speed (None last)
     results.sort(key=lambda x: (x[1] is None, x[1]))
     print_mirror_results(results)
-    print(f"\n同步测速总耗时: {total_time} ms")
+    print(f"\n测速总耗时: {total_time} ms")
     return results
 
 
@@ -117,23 +81,28 @@ def update_pip_config(mirror_url):
     # 提取主机名
     host = urlparse(mirror_url).netloc
     try:
-        subprocess.run([sys.executable, '-m', 'pip', 'config', 'set', 'global.index-url', mirror_url], check=True)
-        subprocess.run([sys.executable, '-m', 'pip', 'config', 'set', 'global.trusted-host', host], check=True)
+        # 尝试设置用户级别的配置 (Adding --user)
+        # Note: If running inside a venv, pip config set usually defaults to user unless environment var is set
+        # However, to be persistent across uvx sessions, we should prefer User configuration.
+        subprocess.run([sys.executable, '-m', 'pip', 'config', 'set', '--user', 'global.index-url', mirror_url], check=True)
+        subprocess.run([sys.executable, '-m', 'pip', 'config', 'set', '--user', 'global.trusted-host', host], check=True)
         print(f"成功设置 pip 镜像源为 '{mirror_url}'，并添加 trusted-host '{host}'")
-    except subprocess.CalledProcessError as e:
-        print(f"更新 pip 配置时出错: {e}, 详细报错如下：")
-        raise e
+    except subprocess.CalledProcessError:
+        print(f"\n警告: 无法自动修改 pip 配置文件 (可能是权限问题)。")
+        print(f"请手动运行以下命令设置镜像源:")
+        print(f"pip config set global.index-url {mirror_url}")
+        print(f"pip config set global.trusted-host {host}")
 
 
 def unset_pip_mirror() -> None:
     """取消pip镜像源设置"""
     try:
-        subprocess.run([sys.executable, '-m', 'pip', 'config', 'unset', 'global.index-url'], check=True)
-        subprocess.run([sys.executable, '-m', 'pip', 'config', 'unset', 'global.trusted-host'], check=True)
+        # Also using --user here
+        subprocess.run([sys.executable, '-m', 'pip', 'config', 'unset', '--user', 'global.index-url'], check=True)
+        subprocess.run([sys.executable, '-m', 'pip', 'config', 'unset', '--user', 'global.trusted-host'], check=True)
         print("成功取消 pip 镜像源设置，已恢复为默认源")
     except subprocess.CalledProcessError as e:
-        print(f"取消 pip 镜像源设置时出错: {e}, 详细报错如下：")
-        raise e
+         print(f"取消 pip 镜像源设置时出错: {e}")
 
 
 def main():
@@ -149,17 +118,11 @@ def main():
     args = parser.parse_args()
 
     if args.command == "list":
-        if ASYNC_SUPPORTED:
-            asyncio.run(list_mirrors_async())
-        else:
-            list_mirrors_sync()
+        list_mirrors()
     elif args.command == "set":
         if args.mirror is None:
             print("未指定镜像源，即将测速并选择最快的镜像源...")
-            if ASYNC_SUPPORTED:
-                results = asyncio.run(list_mirrors_async())
-            else:
-                results = list_mirrors_sync()
+            results = list_mirrors()
 
             fastest_mirror = next((name for name, speed, url in results if speed is not None), None)
 
