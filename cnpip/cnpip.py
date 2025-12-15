@@ -80,6 +80,14 @@ def is_pip_installed():
 def update_pip_config(mirror_url):
     # 提取主机名
     host = urlparse(mirror_url).netloc
+
+    if not is_pip_installed():
+        print(f"\n检测到当前环境未安装 pip (可能是 uvx 环境)。")
+        print(f"请复制以下命令在终端运行以生效配置:")
+        print(f"pip config set global.index-url {mirror_url}")
+        print(f"pip config set global.trusted-host {host}")
+        return
+
     try:
         # 尝试设置用户级别的配置 (Adding --user)
         # Note: If running inside a venv, pip config set usually defaults to user unless environment var is set
@@ -96,6 +104,13 @@ def update_pip_config(mirror_url):
 
 def unset_pip_mirror() -> None:
     """取消pip镜像源设置"""
+    if not is_pip_installed():
+        print(f"\n检测到当前环境未安装 pip (可能是 uvx 环境)。")
+        print(f"请复制以下命令在终端运行以取消配置:")
+        print(f"pip config unset global.index-url")
+        print(f"pip config unset global.trusted-host")
+        return
+
     try:
         # Also using --user here
         subprocess.run([sys.executable, '-m', 'pip', 'config', 'unset', '--user', 'global.index-url'], check=True)
@@ -107,10 +122,6 @@ def unset_pip_mirror() -> None:
 
 def main():
     """主函数，解析命令行参数并执行相应操作"""
-    if not is_pip_installed():
-        print("错误: 未找到 pip，无法设置镜像源")
-        sys.exit(1)
-
     parser = argparse.ArgumentParser(description="轻松管理 pip 镜像源。")
     parser.add_argument("command", choices=["list", "set", "unset"], help="要执行的命令")
     parser.add_argument("mirror", nargs="?", help="要设置的镜像源名称 (仅用于 'set' 命令)")
