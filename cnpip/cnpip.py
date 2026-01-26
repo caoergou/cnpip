@@ -91,10 +91,10 @@ def is_pip_installed():
 
 def detect_environment():
     """
-    Detects the current Python environment type.
-    Returns: 'venv' or 'system'
+    检测当前 Python 环境类型。
+    返回: 'venv' 或 'system'
     """
-    # Check for venv (standard or conda)
+    # 检查是否为虚拟环境 (标准 venv 或 conda)
     if sys.prefix != sys.base_prefix or os.environ.get('CONDA_PREFIX'):
         return 'venv'
     return 'system'
@@ -102,7 +102,7 @@ def detect_environment():
 
 def get_scope_args(args):
     """
-    Determines the pip config arguments based on user flag and environment.
+    根据用户标志和环境确定 pip 配置参数。
     """
     if args.global_:
         return ['--global']
@@ -111,7 +111,7 @@ def get_scope_args(args):
     elif args.venv:
         return ['--site']
 
-    # Auto-detection
+    # 自动检测
     env = detect_environment()
     if env == 'venv':
         return ['--site']
@@ -164,23 +164,23 @@ def unset_pip_mirror(scope_args) -> None:
 
 
 def show_info():
-    """Shows diagnostic information"""
-    print(f"Python Executable: {sys.executable}")
+    """显示诊断信息"""
+    print(f"Python 路径: {sys.executable}")
 
     try:
         pip_ver = subprocess.check_output([sys.executable, '-m', 'pip', '--version']).decode().strip()
-        print(f"Pip Version: {pip_ver}")
+        print(f"Pip 版本: {pip_ver}")
     except Exception as e:
-        print(f"Pip Version: Error ({e})")
+        print(f"Pip 版本: 错误 ({e})")
 
     env_type = detect_environment()
-    print(f"Environment Type: {env_type}")
+    print(f"环境类型: {env_type}")
 
-    print("\n--- Pip Configuration (pip config list -v) ---")
+    print("\n--- Pip 配置信息 (pip config list -v) ---")
     try:
         subprocess.run([sys.executable, '-m', 'pip', 'config', 'list', '-v'], check=False)
     except Exception as e:
-        print(f"Error listing config: {e}")
+        print(f"获取配置列表失败: {e}")
 
 
 def main():
