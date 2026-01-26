@@ -9,6 +9,7 @@ A tool helps Chinese users quickly switch pip mirrors to improve download speeds
     author_email="itsericsmail@gmail.com",
     url="https://github.com/caoergou/cnpip",
     packages=find_packages(),
+    include_package_data=True,
     entry_points={
         'console_scripts': [
             'cnpip=cnpip.cnpip:main',
