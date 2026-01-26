@@ -2,13 +2,14 @@ from setuptools import setup, find_packages
 
 setup(
     name="cnpip",
-    version="1.2.2",
+    version="1.3.0",
     description="""帮助中国用户快速切换 pip 镜像源，提升下载速度的命令行工具
 A tool helps Chinese users quickly switch pip mirrors to improve download speeds.""",
     author="caoergou",
     author_email="itsericsmail@gmail.com",
     url="https://github.com/caoergou/cnpip",
     packages=find_packages(),
+    include_package_data=True,
     entry_points={
         'console_scripts': [
             'cnpip=cnpip.cnpip:main',
