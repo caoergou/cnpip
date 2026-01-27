@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor
 
 from .mirrors import MIRRORS, update_mirrors_from_remote
+from . import __version__
 
 MIN_PYTHON_VERSION = (3, 6)
 if sys.version_info < MIN_PYTHON_VERSION:
@@ -100,6 +101,46 @@ def detect_environment():
     return 'system'
 
 
+def get_pip_config():
+    """
+    获取当前 pip 配置 (index-url 和 trusted-host)
+    """
+    try:
+        # 使用 subprocess 获取 pip config list 输出
+        result = subprocess.run(
+            [sys.executable, '-m', 'pip', 'config', 'list'],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            encoding='utf-8',
+            check=False
+        )
+        if result.returncode != 0:
+            return None, None
+
+        output = result.stdout
+        index_url = None
+        trusted_host = None
+
+        for line in output.splitlines():
+            # 格式通常是 global.index-url='...'
+            if 'global.index-url' in line:
+                # 提取单引号或双引号中的内容，或者直接提取值
+                parts = line.split('=', 1)
+                if len(parts) == 2:
+                    val = parts[1].strip()
+                    # 去除可能的引号
+                    index_url = val.strip("'\"")
+            elif 'global.trusted-host' in line:
+                parts = line.split('=', 1)
+                if len(parts) == 2:
+                    val = parts[1].strip()
+                    trusted_host = val.strip("'\"")
+
+        return index_url, trusted_host
+    except Exception:
+        return None, None
+
+
 def get_scope_args(args):
     """
     根据用户标志和环境确定 pip 配置参数。
@@ -119,22 +160,52 @@ def get_scope_args(args):
         return ['--user']
 
 
+def get_scope_description(scope_args):
+    """
+    返回配置范围的中文描述
+    """
+    if not scope_args:
+        return "自动"
+    if '--global' in scope_args:
+        return "系统全局配置"
+    if '--user' in scope_args:
+        return "当前用户配置"
+    if '--site' in scope_args:
+        return "虚拟环境配置"
+    return " ".join(scope_args)
+
+
 def update_pip_config(mirror_url, scope_args):
     # 提取主机名
     host = urlparse(mirror_url).netloc
     scope_str = " ".join(scope_args) if scope_args else "auto"
+    scope_desc = get_scope_description(scope_args)
 
     if not is_pip_installed():
         print(f"\n检测到当前环境未安装 pip (可能是 uvx 环境)。")
-        print(f"请复制以下命令在终端运行以生效配置:")
+        print(f"请复制以下命令在终端运行以生效配置 ({scope_desc}):")
         print(f"pip config set {scope_str} global.index-url {mirror_url}")
         print(f"pip config set {scope_str} global.trusted-host {host}")
         return
 
+    print(f"\n正在修改 [{scope_desc}] ...", flush=True)
+
+    # 获取修改前配置
+    old_index, old_host = get_pip_config()
+    print(f"修改前配置: index-url='{old_index or '默认'}', trusted-host='{old_host or '未设置'}'", flush=True)
+
     try:
+        # 注意: 这里的 subprocess output 被默认显示出来了，可能需要隐藏，或者保留以显示 pip 的反馈
+        # 用户的需求是清晰的输出，pip config set 会输出 "Writing to ..."
+        # 我们保留它，因为它告诉用户文件位置
         subprocess.run([sys.executable, '-m', 'pip', 'config', 'set'] + scope_args + ['global.index-url', mirror_url], check=True)
         subprocess.run([sys.executable, '-m', 'pip', 'config', 'set'] + scope_args + ['global.trusted-host', host], check=True)
-        print(f"成功设置 pip 镜像源为 '{mirror_url}'，并添加 trusted-host '{host}'")
+
+        # 获取修改后配置
+        new_index, new_host = get_pip_config()
+        print(f"修改后配置: index-url='{new_index or '默认'}', trusted-host='{new_host or '未设置'}'")
+
+        print(f"成功设置 pip 镜像源为 '{mirror_url}'")
     except subprocess.CalledProcessError:
         print(f"\n警告: 无法自动修改 pip 配置文件 (可能是权限问题)。")
         if '--global' in scope_args:
@@ -165,6 +236,7 @@ def unset_pip_mirror(scope_args) -> None:
 
 def show_info():
     """显示诊断信息"""
+    print(f"cnpip 版本: v{__version__}")
     print(f"Python 路径: {sys.executable}")
 
     try:
@@ -174,13 +246,21 @@ def show_info():
         print(f"Pip 版本: 错误 ({e})")
 
     env_type = detect_environment()
-    print(f"环境类型: {env_type}")
+    env_desc = "虚拟环境" if env_type == 'venv' else "系统环境"
+    print(f"环境类型: {env_desc}")
 
-    print("\n--- Pip 配置信息 (pip config list -v) ---")
-    try:
-        subprocess.run([sys.executable, '-m', 'pip', 'config', 'list', '-v'], check=False)
-    except Exception as e:
-        print(f"获取配置列表失败: {e}")
+    print("\n--- 当前 Pip 配置 ---")
+    index_url, trusted_host = get_pip_config()
+
+    if index_url:
+        print(f"当前镜像源: {index_url}")
+    else:
+        print(f"当前镜像源: 默认 (https://pypi.org/simple)")
+
+    if trusted_host:
+        print(f"信任主机: {trusted_host}")
+    else:
+        print(f"信任主机: 未设置")
 
 
 def main():
