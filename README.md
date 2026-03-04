@@ -1,5 +1,7 @@
 # cnpip
 
+[English](./README_EN.md)
+
 ![PyPI](https://img.shields.io/pypi/v/cnpip)
 ![PyPI - Downloads](https://img.shields.io/pypi/dm/cnpip)
 ![License](https://img.shields.io/github/license/caoergou/cnpip)
@@ -22,12 +24,12 @@ uvx cnpip set
 
 ## 功能
 
-- **测速并切换镜像源**：并发测试所有镜像源延迟，按速度排序，自动选择最快镜像
-- **原生支持 uv**：检测到 uvx 环境时自动配置 `uv.toml`，也可通过 `--uv` 显式配置
-- **智能环境检测**：自动识别 uvx、uv 虚拟环境、conda、pipx、venv 等环境并选择合适的配置作用域
-- **灵活的配置作用域**：支持 `--user`、`--global`、`--venv`、`--uv` 四种作用域
-- **跨平台支持**：兼容 Linux、macOS 和 Windows（含商店版、pyenv-win、Scoop 等多种安装方式）
-- **诊断功能**：显示当前环境类型、pip 配置文件实际路径、uv 安装状态与配置
+- **一键测速，自动换源**：并发测试全部镜像延迟，按速度排序，`cnpip set` 即完成切换
+- **原生支持 uv**：uvx 环境下自动写入 `uv.toml`，也可通过 `--uv` 随时显式配置
+- **智能识别运行环境**：自动区分 uvx、conda、pipx、venv 等，精准选择配置作用域，无需手动指定
+- **精细的作用域控制**：`--user`（用户）、`--global`（系统）、`--venv`（虚拟环境）、`--uv`（uv 专用）
+- **全平台兼容**：支持 Linux、macOS 及 Windows 各种安装方式（官方包、商店版、pyenv-win、Scoop 等）
+- **内置诊断**：`cnpip info` 一条命令，查看环境类型、pip 配置文件路径与 uv 状态
 
 ## 支持的镜像源
 
@@ -137,7 +139,7 @@ cnpip update
 
 ## 配置文件
 
-`cnpip` 会根据当前环境自动选择修改哪个配置文件。你可以通过 `cnpip info` 查看实际生效的配置文件路径。
+`cnpip` 会根据当前环境自动选择修改哪个配置文件，通过 `cnpip info` 可查看实际生效的路径。
 
 - **pip 配置**：只修改 `global.index-url` 和 `global.trusted-host`，不影响其他配置项
 - **uv 配置**：写入 `[[index]]` 块到 `uv.toml`，不影响其他 uv 配置
@@ -153,7 +155,7 @@ cnpip unset --uv   # 恢复 uv 默认源
 
 ### 2. 在 uvx 环境中使用时配置会持久化吗？
 
-会。通过 `uvx cnpip set` 运行时，cnpip 检测到 uvx 环境后会自动配置写入 `~/.config/uv/uv.toml`（Windows 为 `%APPDATA%\uv\uv.toml`），对所有 uv 操作永久生效，不会随临时环境消失。
+会。通过 `uvx cnpip set` 运行时，cnpip 检测到 uvx 环境后会自动写入 `~/.config/uv/uv.toml`（Windows 为 `%APPDATA%\uv\uv.toml`），对所有 uv 操作永久生效，不会随临时环境消失。
 
 ### 3. 为什么 `--global` 设置失败？
 
@@ -171,54 +173,3 @@ cnpip set --uv         # 测速并自动选择最快镜像写入 uv
 ## 许可证
 
 本项目使用 [MIT 许可证](LICENSE)。
-
----
-
-# cnpip (English)
-
-`cnpip` is a command-line tool for users in **mainland China** to quickly switch `pip` mirrors and improve Python package download speeds. It tests mirror latency concurrently, automatically selects the fastest one, and natively supports modern tools like `uv`.
-
-## Quick Start
-
-```bash
-pip install cnpip
-cnpip set
-```
-
-Or run via `uvx` without installing (automatically configures uv mirrors):
-
-```bash
-uvx cnpip set
-```
-
-## Features
-
-- **Benchmark & switch mirrors**: Concurrent latency tests, sorted results, auto-select fastest
-- **Native uv support**: Auto-configures `uv.toml` in uvx environments; explicit `--uv` flag available
-- **Smart environment detection**: Identifies uvx, uv venv, conda, pipx, venv and selects the right config scope
-- **Flexible scopes**: `--user`, `--global`, `--venv`, `--uv`
-- **Cross-platform**: Linux, macOS, and Windows (Store, pyenv-win, Scoop, official installer, etc.)
-- **Diagnostics**: Shows environment type, pip config file paths, uv status
-
-## Usage
-
-### Switch Mirror
-
-```bash
-cnpip set              # Auto-select fastest mirror (smart scope detection)
-cnpip set tuna         # Set to TUNA mirror
-cnpip set --user       # Force user-level pip config
-cnpip set --venv       # Force virtualenv pip config
-cnpip set --uv         # Write to uv.toml instead of pip config
-cnpip set --uv tuna    # Write specific mirror to uv.toml
-```
-
-### Other Commands
-
-```bash
-cnpip list             # List all mirrors with latency
-cnpip info             # Show environment, pip config paths, and uv status
-cnpip update           # Fetch latest mirror list from GitHub
-cnpip unset            # Restore default pip source
-cnpip unset --uv       # Remove uv mirror configuration
-```
