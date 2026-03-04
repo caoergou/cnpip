@@ -63,7 +63,8 @@ class TestPipConfigPathMacOS:
         monkeypatch.setattr(module.platform, 'system', fake_system('Darwin'))
         path = get_pip_config_path_for_scope('global')
         assert path is not None
-        assert '/Library' in str(path)
+        # 使用 'Library' 而非 '/Library'，避免 Windows 路径分隔符差异
+        assert 'Library' in str(path)
 
 
 class TestPipConfigPathActualPlatform:
