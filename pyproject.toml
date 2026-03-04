@@ -31,6 +31,13 @@ classifiers = [
     "Topic :: Utilities"
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
+
 [project.urls]
 Homepage = "https://github.com/caoergou/cnpip"
 Issues = "https://github.com/caoergou/cnpip/issues"
