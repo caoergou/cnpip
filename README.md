@@ -4,40 +4,47 @@
 ![PyPI - Downloads](https://img.shields.io/pypi/dm/cnpip)
 ![License](https://img.shields.io/github/license/caoergou/cnpip)
 
-`cnpip` 是一个帮助你快速切换 `pip` 镜像源，提升 Python 包的下载速度的命令行工具。  
-它可以测试各镜像源的连接速度，并**自动选择最快的镜像源**。
+`cnpip` 是一个帮助你快速切换 `pip` 镜像源，提升 Python 包下载速度的命令行工具。
+它可以测试各镜像源的连接速度，**自动选择最快的镜像源**，并原生支持 `uv` 等现代包管理工具。
 
 ## 快速使用
-
-运行以下命令，快速切换为最快的镜像源：
 
 ```bash
 pip install cnpip
 cnpip set
 ```
 
+或通过 `uvx` 临时运行（自动配置 uv 镜像源，无需安装）：
+
+```bash
+uvx cnpip set
+```
+
 ## 功能
 
-- **列出并测试镜像源速度**，按连接速度排序，并显示具体错误信息（如超时、状态码）
-- **快速切换 pip 镜像源**，支持*手动选择*或*自动选择*最快镜像
-- **灵活的配置作用域**，支持设置全局、当前用户或当前虚拟环境的配置
-- **诊断功能**，查看当前 Python/Pip 环境及配置信息
-- **远程更新**，从 GitHub 获取最新的镜像源列表
+- **测速并切换镜像源**：并发测试所有镜像源延迟，按速度排序，自动选择最快镜像
+- **原生支持 uv**：检测到 uvx 环境时自动配置 `uv.toml`，也可通过 `--uv` 显式配置
+- **智能环境检测**：自动识别 uvx、uv 虚拟环境、conda、pipx、venv 等环境并选择合适的配置作用域
+- **灵活的配置作用域**：支持 `--user`、`--global`、`--venv`、`--uv` 四种作用域
+- **跨平台支持**：兼容 Linux、macOS 和 Windows（含商店版、pyenv-win、Scoop 等多种安装方式）
+- **诊断功能**：显示当前环境类型、pip 配置文件实际路径、uv 安装状态与配置
 
 ## 支持的镜像源
 
-- [清华大学 TUNA](https://pypi.tuna.tsinghua.edu.cn/simple)
-- [中国科学技术大学 USTC](https://pypi.mirrors.ustc.edu.cn/simple)
-- [阿里云 Aliyun](https://mirrors.aliyun.com/pypi/simple)
-- [腾讯 Tencent](https://mirrors.cloud.tencent.com/pypi/simple)
-- [华为 Huawei](https://repo.huaweicloud.com/repository/pypi/simple)
-- [西湖大学 Westlake University](https://mirrors.westlake.edu.cn)
-- [南方科技大学 SUSTech](https://mirrors.sustech.edu.cn/pypi/web/simple)
-- [默认源 PyPi](https://pypi.org/simple)
+| 名称 | 地址 |
+|------|------|
+| [清华大学 TUNA](https://pypi.tuna.tsinghua.edu.cn/simple) | `tuna` |
+| [中国科学技术大学 USTC](https://pypi.mirrors.ustc.edu.cn/simple) | `ustc` |
+| [阿里云 Aliyun](https://mirrors.aliyun.com/pypi/simple) | `aliyun` |
+| [腾讯 Tencent](https://mirrors.cloud.tencent.com/pypi/simple) | `tencent` |
+| [华为 Huawei](https://repo.huaweicloud.com/repository/pypi/simple) | `huawei` |
+| [西湖大学 Westlake](https://mirrors.westlake.edu.cn/pypi/simple) | `westlake` |
+| [南方科技大学 SUSTech](https://mirrors.sustech.edu.cn/pypi/web/simple) | `sustech` |
+| [默认源 PyPI](https://pypi.org/simple) | `default` |
 
 ## 使用方法
 
-### 1. 列出所有可用的镜像源
+### 1. 列出所有可用的镜像源并测速
 
 ```bash
 cnpip list
@@ -46,7 +53,7 @@ cnpip list
 示例输出：
 
 ```
-镜像名称       耗时/状态            地址
+镜像名称      耗时/状态            地址
 -----------------------------------------------------------------------------------
 ustc         135.71 ms           https://pypi.mirrors.ustc.edu.cn/simple
 aliyun       300.77 ms           https://mirrors.aliyun.com/pypi/simple
@@ -55,42 +62,69 @@ default      1252.75 ms          https://pypi.org/simple
 huawei       Timeout             https://repo.huaweicloud.com/repository/pypi/simple
 ```
 
-### 2. 自动选择最快的镜像源
+### 2. 切换 pip 镜像源
 
 ```bash
-cnpip set
+cnpip set           # 测速并自动选择最快镜像源
+cnpip set tuna      # 手动指定镜像源
 ```
 
-默认行为：
-*   **在虚拟环境中**：默认设置到当前环境 (`--site`)。
-*   **在系统环境中**：默认设置到当前用户 (`--user`)。
+**默认配置作用域（自动检测）：**
 
-你也可以显式指定作用域：
+| 当前环境 | 自动选择的作用域 |
+|----------|-----------------|
+| uvx 临时工具环境 | 写入 `~/.config/uv/uv.toml` |
+| uv 虚拟环境 / conda / venv | `--site`（虚拟环境级） |
+| 系统环境 / pipx | `--user`（用户级） |
+
+**显式指定作用域：**
 
 ```bash
-cnpip set --user    # 强制设置用户级配置
-cnpip set --global  # 强制设置系统全局配置 (需要管理员权限)
-cnpip set --venv    # 强制设置当前虚拟环境配置
+cnpip set --user    # 用户级配置（~/.config/pip/pip.conf）
+cnpip set --global  # 系统全局配置（需要管理员权限）
+cnpip set --venv    # 当前虚拟环境配置
+cnpip set --uv      # 写入 uv 配置（~/.config/uv/uv.toml）
 ```
 
-### 3. 选择指定的镜像源
+### 3. 取消自定义镜像源
 
 ```bash
-cnpip set <镜像名称>
+cnpip unset         # 取消 pip 镜像源设置
+cnpip unset --uv    # 移除 uv 镜像源配置
 ```
 
-示例：
+同样支持指定 pip 作用域：
 
 ```bash
-cnpip set tuna
+cnpip unset --user
+cnpip unset --global
 ```
 
 ### 4. 诊断与信息
 
-查看当前 Python 路径、Pip 版本以及生效的配置文件位置：
-
 ```bash
 cnpip info
+```
+
+示例输出：
+
+```
+cnpip 版本: v1.3.1
+Python 路径: /usr/bin/python3
+操作系统: Linux 5.15.0
+Pip 版本: pip 24.0 from ...
+环境类型: 系统环境
+
+--- 当前 Pip 配置 ---
+当前镜像源: https://pypi.tuna.tsinghua.edu.cn/simple
+信任主机: pypi.tuna.tsinghua.edu.cn
+配置文件路径:
+  /home/user/.config/pip/pip.conf
+
+--- uv 信息 ---
+uv 版本: uv 0.5.0
+uv 配置文件: /home/user/.config/uv/uv.toml
+uv 镜像源: https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
 ### 5. 更新镜像源列表
@@ -101,40 +135,38 @@ cnpip info
 cnpip update
 ```
 
-### 6. 取消自定义镜像源设置
-
-```bash
-cnpip unset
-```
-
-同样支持指定作用域：
-```bash
-cnpip unset --user
-```
-
 ## 配置文件
 
-`cnpip` 默认根据你的环境智能选择修改哪个配置文件。你可以通过 `cnpip info` 查看当前生效的配置。
+`cnpip` 会根据当前环境自动选择修改哪个配置文件。你可以通过 `cnpip info` 查看实际生效的配置文件路径。
 
-在设置镜像源时，`cnpip` 只会修改或添加 `global.index-url` 和 `global.trusted-host` 配置，不会覆盖其他配置项。
+- **pip 配置**：只修改 `global.index-url` 和 `global.trusted-host`，不影响其他配置项
+- **uv 配置**：写入 `[[index]]` 块到 `uv.toml`，不影响其他 uv 配置
 
 ## 常见问题
 
-### 1. 为什么我无法连接到某些镜像源？
-
-网络问题可能导致连接失败。`cnpip list` 现在会显示具体的错误信息（如 `Timeout` 或 `Status 404`），帮助你排查问题。
-
-### 2. 如何恢复为默认的 `pip` 镜像源？
-
-使用 `unset` 命令恢复为默认的 `pip` 镜像源：
+### 1. 如何恢复为默认镜像源？
 
 ```bash
-cnpip unset
+cnpip unset        # 恢复 pip 默认源
+cnpip unset --uv   # 恢复 uv 默认源
 ```
 
-### 3. 在 uvx 或 pipx 临时环境中使用？
+### 2. 在 uvx 环境中使用时配置会持久化吗？
 
-在这些临时环境中，`cnpip` 会检测并建议你使用 `--user` 选项，或者直接输出配置命令供你复制执行，以确保配置能持久化到你的用户配置中，而不是随着临时环境消失。
+会。通过 `uvx cnpip set` 运行时，cnpip 检测到 uvx 环境后会自动配置写入 `~/.config/uv/uv.toml`（Windows 为 `%APPDATA%\uv\uv.toml`），对所有 uv 操作永久生效，不会随临时环境消失。
+
+### 3. 为什么 `--global` 设置失败？
+
+- **Linux / macOS**：需要 sudo 权限，请运行 `sudo cnpip set --global`
+- **Windows 商店版 Python**：受沙盒限制，建议改用 `cnpip set --user`
+- **其他 Windows**：请以管理员身份运行 PowerShell 后重试
+
+### 4. 如何单独配置 uv 的镜像源？
+
+```bash
+cnpip set --uv tuna    # 配置 uv 使用清华镜像
+cnpip set --uv         # 测速并自动选择最快镜像写入 uv
+```
 
 ## 许可证
 
@@ -144,45 +176,49 @@ cnpip unset
 
 # cnpip (English)
 
-`cnpip` is a command-line tool designed specifically for users in **mainland China** to help quickly switch `pip`
-mirrors and improve Python package download speeds.       
-It tests the connection speed of various mirrors and **automatically selects the fastest one**.
-
-> **Attention: This Python package is only available in Chinese mainland.**
+`cnpip` is a command-line tool for users in **mainland China** to quickly switch `pip` mirrors and improve Python package download speeds. It tests mirror latency concurrently, automatically selects the fastest one, and natively supports modern tools like `uv`.
 
 ## Quick Start
-
-Run the following commands to quickly switch to the fastest mirror:
 
 ```bash
 pip install cnpip
 cnpip set
 ```
 
+Or run via `uvx` without installing (automatically configures uv mirrors):
+
+```bash
+uvx cnpip set
+```
+
 ## Features
 
-- **List and test mirror speeds**, with detailed error reporting.
-- **Quickly switch pip mirrors**, supporting *manual selection* or *automatic selection*.
-- **Flexible Scopes**: Support `--user`, `--global`, and `--venv` (site) configuration.
-- **Diagnostics**: `cnpip info` to view environment and config details.
-- **Remote Update**: `cnpip update` to fetch the latest mirror list from GitHub.
+- **Benchmark & switch mirrors**: Concurrent latency tests, sorted results, auto-select fastest
+- **Native uv support**: Auto-configures `uv.toml` in uvx environments; explicit `--uv` flag available
+- **Smart environment detection**: Identifies uvx, uv venv, conda, pipx, venv and selects the right config scope
+- **Flexible scopes**: `--user`, `--global`, `--venv`, `--uv`
+- **Cross-platform**: Linux, macOS, and Windows (Store, pyenv-win, Scoop, official installer, etc.)
+- **Diagnostics**: Shows environment type, pip config file paths, uv status
 
 ## Usage
 
 ### Switch Mirror
 
 ```bash
-cnpip set              # Auto-detect fastest and set (smart scope)
-cnpip set tuna         # Set specifically to TUNA mirror
-cnpip set --user       # Force user-level config
-cnpip set --venv       # Force virtualenv config
+cnpip set              # Auto-select fastest mirror (smart scope detection)
+cnpip set tuna         # Set to TUNA mirror
+cnpip set --user       # Force user-level pip config
+cnpip set --venv       # Force virtualenv pip config
+cnpip set --uv         # Write to uv.toml instead of pip config
+cnpip set --uv tuna    # Write specific mirror to uv.toml
 ```
 
 ### Other Commands
 
 ```bash
-cnpip list     # List mirrors and speeds
-cnpip info     # Show environment info
-cnpip update   # Update mirror list from remote
-cnpip unset    # Restore default pip source
+cnpip list             # List all mirrors with latency
+cnpip info             # Show environment, pip config paths, and uv status
+cnpip update           # Fetch latest mirror list from GitHub
+cnpip unset            # Restore default pip source
+cnpip unset --uv       # Remove uv mirror configuration
 ```
