@@ -397,6 +397,100 @@ def unset_uv_config():
         return False, f"移除 uv 配置失败: {e}"
 
 
+def get_pip_config_path_for_scope(scope):
+    """
+    返回指定作用域的 pip 配置文件写入路径（跨平台）。
+    scope: 'user' | 'global'
+    pip 配置文件是普通 INI 文件，无需 pip 命令即可直接读写。
+    """
+    system = platform.system()
+    if scope == 'user':
+        if system == 'Windows':
+            appdata = os.environ.get('APPDATA', str(Path.home() / 'AppData' / 'Roaming'))
+            return Path(appdata) / 'pip' / 'pip.ini'
+        elif system == 'Darwin':
+            return Path.home() / 'Library' / 'Application Support' / 'pip' / 'pip.conf'
+        else:
+            xdg = os.environ.get('XDG_CONFIG_HOME', str(Path.home() / '.config'))
+            return Path(xdg) / 'pip' / 'pip.conf'
+    elif scope == 'global':
+        if system == 'Windows':
+            programdata = os.environ.get('PROGRAMDATA', 'C:\\ProgramData')
+            return Path(programdata) / 'pip' / 'pip.ini'
+        elif system == 'Darwin':
+            return Path('/Library/Application Support/pip/pip.conf')
+        else:
+            return Path('/etc/pip.conf')
+    return None
+
+
+def write_pip_config_directly(mirror_url, scope):
+    """
+    不依赖 pip 命令，直接用 configparser 写入 pip 配置文件。
+    适用于 uvx 等无 pip 的环境中用户明确指定了 --user / --global。
+    scope: 'user' | 'global'
+    返回 (success: bool, message: str)
+    """
+    import configparser
+    config_path = get_pip_config_path_for_scope(scope)
+    if config_path is None:
+        return False, f"不支持的作用域: {scope}"
+
+    host = urlparse(mirror_url).netloc
+    config = configparser.ConfigParser()
+    if config_path.exists():
+        config.read(config_path, encoding='utf-8')
+    if not config.has_section('global'):
+        config.add_section('global')
+    config.set('global', 'index-url', mirror_url)
+    config.set('global', 'trusted-host', host)
+
+    try:
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(config_path, 'w', encoding='utf-8') as f:
+            config.write(f)
+        return True, f"成功设置 pip 镜像源为 '{mirror_url}'\n配置文件: {config_path}"
+    except PermissionError:
+        hint = get_global_scope_hint() if scope == 'global' else ''
+        return False, f"权限不足，无法写入 {config_path}" + (f"\n{hint}" if hint else '')
+    except Exception as e:
+        return False, f"写入失败: {e}"
+
+
+def unset_pip_config_directly(scope):
+    """
+    不依赖 pip 命令，直接从 pip 配置文件中移除镜像源配置。
+    scope: 'user' | 'global'
+    返回 (success: bool, message: str)
+    """
+    import configparser
+    config_path = get_pip_config_path_for_scope(scope)
+    if config_path is None:
+        return False, f"不支持的作用域: {scope}"
+    if not config_path.exists():
+        return True, "pip 配置文件不存在，无需操作"
+
+    config = configparser.ConfigParser()
+    config.read(config_path, encoding='utf-8')
+    changed = False
+    for key in ('index-url', 'trusted-host'):
+        if config.has_option('global', key):
+            config.remove_option('global', key)
+            changed = True
+
+    if not changed:
+        return True, "pip 配置中未设置镜像源，无需操作"
+
+    try:
+        with open(config_path, 'w', encoding='utf-8') as f:
+            config.write(f)
+        return True, f"成功移除 pip 镜像源配置\n配置文件: {config_path}"
+    except PermissionError:
+        return False, f"权限不足，无法写入 {config_path}"
+    except Exception as e:
+        return False, f"移除失败: {e}"
+
+
 def update_pip_config(mirror_url, scope_args):
     # 提取主机名
     host = urlparse(mirror_url).netloc
@@ -404,16 +498,27 @@ def update_pip_config(mirror_url, scope_args):
     scope_desc = get_scope_description(scope_args)
 
     if not is_pip_installed():
-        print(f"\n检测到当前环境未安装 pip。")
-        uv = detect_uv_binary()
-        if uv:
-            print("检测到 uv 已安装，自动配置 uv 镜像源...")
-            success, msg = update_uv_config(mirror_url)
+        print(f"\n检测到当前环境未安装 pip（可能是 uvx 环境）。")
+        if '--venv' in scope_args:
+            print("错误: --venv 在 uvx 临时环境中无意义，配置会随环境消失。")
+            print("建议改用 --user 写入用户级 pip 配置，或 --uv 配置 uv 镜像源。")
+            return
+        elif '--user' in scope_args or '--global' in scope_args:
+            direct_scope = 'global' if '--global' in scope_args else 'user'
+            print(f"正在直接写入 pip {scope_desc}（无需 pip 命令）...")
+            success, msg = write_pip_config_directly(mirror_url, direct_scope)
             print(msg)
         else:
-            print(f"请复制以下命令在终端运行以生效配置 ({scope_desc}):")
-            print(f"pip config set {scope_str} global.index-url {mirror_url}")
-            print(f"pip config set {scope_str} global.trusted-host {host}")
+            # 自动模式兜底：优先配置 uv
+            uv = detect_uv_binary()
+            if uv:
+                print("检测到 uv 已安装，自动配置 uv 镜像源...")
+                success, msg = update_uv_config(mirror_url)
+                print(msg)
+            else:
+                print(f"请复制以下命令在终端运行以生效配置 ({scope_desc}):")
+                print(f"pip config set {scope_str} global.index-url {mirror_url}")
+                print(f"pip config set {scope_str} global.trusted-host {host}")
         return
 
     print(f"\n正在修改 [{scope_desc}] ...", flush=True)
@@ -448,10 +553,18 @@ def unset_pip_mirror(scope_args) -> None:
     scope_str = " ".join(scope_args) if scope_args else "auto"
 
     if not is_pip_installed():
-        print(f"\n检测到当前环境未安装 pip。")
-        print(f"请复制以下命令在终端运行以取消配置:")
-        print(f"pip config unset {scope_str} global.index-url")
-        print(f"pip config unset {scope_str} global.trusted-host")
+        print(f"\n检测到当前环境未安装 pip（可能是 uvx 环境）。")
+        if '--venv' in scope_args:
+            print("错误: --venv 在 uvx 临时环境中无意义。")
+            return
+        elif '--user' in scope_args or '--global' in scope_args:
+            direct_scope = 'global' if '--global' in scope_args else 'user'
+            success, msg = unset_pip_config_directly(direct_scope)
+            print(msg)
+        else:
+            print(f"请复制以下命令在终端运行以取消配置:")
+            print(f"pip config unset {scope_str} global.index-url")
+            print(f"pip config unset {scope_str} global.trusted-host")
         return
 
     try:
