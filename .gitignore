@@ -4,3 +4,6 @@
 /dist/
 __pycache__/
 *.pyc
+
+# Claude Code auto memory
+.claude/
