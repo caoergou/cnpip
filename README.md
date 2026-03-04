@@ -31,16 +31,16 @@ uvx cnpip set
 
 ## 支持的镜像源
 
-| 名称 | 地址 |
-|------|------|
-| [清华大学 TUNA](https://pypi.tuna.tsinghua.edu.cn/simple) | `tuna` |
-| [中国科学技术大学 USTC](https://pypi.mirrors.ustc.edu.cn/simple) | `ustc` |
-| [阿里云 Aliyun](https://mirrors.aliyun.com/pypi/simple) | `aliyun` |
-| [腾讯 Tencent](https://mirrors.cloud.tencent.com/pypi/simple) | `tencent` |
-| [华为 Huawei](https://repo.huaweicloud.com/repository/pypi/simple) | `huawei` |
-| [西湖大学 Westlake](https://mirrors.westlake.edu.cn/pypi/simple) | `westlake` |
-| [南方科技大学 SUSTech](https://mirrors.sustech.edu.cn/pypi/web/simple) | `sustech` |
-| [默认源 PyPI](https://pypi.org/simple) | `default` |
+| 名称 | 简写 | 地址 |
+|------|------|------|
+| 清华大学 TUNA | `tuna` | https://pypi.tuna.tsinghua.edu.cn/simple |
+| 中国科学技术大学 USTC | `ustc` | https://pypi.mirrors.ustc.edu.cn/simple |
+| 阿里云 Aliyun | `aliyun` | https://mirrors.aliyun.com/pypi/simple |
+| 腾讯 Tencent | `tencent` | https://mirrors.cloud.tencent.com/pypi/simple |
+| 华为 Huawei | `huawei` | https://repo.huaweicloud.com/repository/pypi/simple |
+| 西湖大学 Westlake | `westlake` | https://mirrors.westlake.edu.cn/pypi/simple |
+| 南方科技大学 SUSTech | `sustech` | https://mirrors.sustech.edu.cn/pypi/web/simple |
+| 默认源 PyPI | `default` | https://pypi.org/simple |
 
 ## 使用方法
 
