@@ -5,6 +5,7 @@
 ![PyPI](https://img.shields.io/pypi/v/cnpip)
 ![PyPI - Downloads](https://img.shields.io/pypi/dm/cnpip)
 ![License](https://img.shields.io/github/license/caoergou/cnpip)
+![Tests](https://github.com/caoergou/cnpip/actions/workflows/test.yml/badge.svg)
 
 `cnpip` is a command-line tool for users in **mainland China** to quickly switch `pip` mirrors and improve Python package download speeds. It benchmarks all mirrors concurrently, automatically selects the fastest one, and natively supports modern tools like `uv`.
 

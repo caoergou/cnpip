@@ -5,6 +5,7 @@
 ![PyPI](https://img.shields.io/pypi/v/cnpip)
 ![PyPI - Downloads](https://img.shields.io/pypi/dm/cnpip)
 ![License](https://img.shields.io/github/license/caoergou/cnpip)
+![Tests](https://github.com/caoergou/cnpip/actions/workflows/test.yml/badge.svg)
 
 `cnpip` 是一个帮助你快速切换 `pip` 镜像源，提升 Python 包下载速度的命令行工具。
 它可以测试各镜像源的连接速度，**自动选择最快的镜像源**，并原生支持 `uv` 等现代包管理工具。
