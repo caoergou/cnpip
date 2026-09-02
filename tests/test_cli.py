@@ -144,6 +144,37 @@ class TestDefaultCommand:
         assert fake_uv_config_path.exists()
 
 
+class TestHelpText:
+    """help 输出全中文。"""
+
+    def test_help_flag_prints_chinese(self, monkeypatch, capsys):
+        monkeypatch.setattr(sys, 'argv', ['cnpip', '--help'])
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert '用法' in captured.out
+        assert '选项' in captured.out
+        assert '快速切换' in captured.out
+
+    def test_short_help_flag(self, monkeypatch, capsys):
+        monkeypatch.setattr(sys, 'argv', ['cnpip', '-h'])
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert '用法' in captured.out
+
+    def test_help_no_english_labels(self, monkeypatch, capsys):
+        monkeypatch.setattr(sys, 'argv', ['cnpip', '--help'])
+        with pytest.raises(SystemExit):
+            main()
+        captured = capsys.readouterr()
+        assert 'positional arguments' not in captured.out
+        assert 'optional arguments' not in captured.out
+        assert 'options:' not in captured.out.lower().split('选项')[0]
+
+
 class TestListCommand:
     def test_list_prints_mirror_header(self, monkeypatch, capsys):
         monkeypatch.setattr(sys, 'argv', ['cnpip', 'list'])
