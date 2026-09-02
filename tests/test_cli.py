@@ -223,6 +223,20 @@ class TestMirrorProbe:
             'https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main/noarch/repodata.json'
         ] * module.MIRROR_PROBE_COUNT
 
+    def test_site_scope_without_pip_returns_failure(self, monkeypatch, capsys):
+        monkeypatch.setattr(module, 'is_pip_installed', lambda: False)
+        monkeypatch.setattr(
+            module,
+            'write_pip_config_directly',
+            lambda *args: pytest.fail('site scope must not be written without pip'),
+        )
+
+        success = module.update_pip_config(
+            'https://pypi.tuna.tsinghua.edu.cn/simple', ['--site'])
+
+        assert not success
+        assert '--venv' in capsys.readouterr().out
+
     def test_flag_without_command_defaults_to_set(self, monkeypatch, fake_uv_config_path):
         monkeypatch.setattr(sys, 'argv', ['cnpip', 'tuna', '--uv'])
         monkeypatch.setattr(module, 'detect_uv_binary', lambda: '/usr/bin/uv')
