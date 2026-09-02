@@ -34,6 +34,7 @@ cnpip tuna          # 等同于 cnpip set tuna
 ## 功能
 
 - **一键测速，自动换源**：并发测试全部镜像延迟，按速度排序，`cnpip set` 即完成切换
+- **面向真实包索引测速**：对 PEP 503 的 `pip` 项目页重复 GET，使用中位响应延迟，避免只测根路径或一次请求
 - **交互式多工具配置**：`cnpip set` 自动扫描已安装的包管理工具，一次选择、批量换源（`-y` 跳过交互）
 - **原生支持 uv**：uvx 环境下自动写入 `uv.toml`，也可通过 `--uv` 随时显式配置
 - **覆盖主流包管理生态**：`--pdm`、`--poetry`、`--conda` 一条命令配置对应工具的镜像源
@@ -66,7 +67,7 @@ cnpip list
 示例输出：
 
 ```
-镜像名称      耗时/状态            地址
+镜像名称      响应延迟/状态        地址
 -----------------------------------------------------------------------------------
 ustc         135.71 ms           https://pypi.mirrors.ustc.edu.cn/simple
 aliyun       300.77 ms           https://mirrors.aliyun.com/pypi/simple
@@ -95,7 +96,7 @@ cnpip set -y        # 跳过交互，直接使用默认行为（等同旧版）
 请选择要配置的工具（编号，空格分隔多个；a=全部；回车=1 即 pip）:
 ```
 
-脚本 / CI 等非终端环境、显式指定 `--uv` 等 flag、或使用 `-y` 时跳过交互，行为与旧版完全一致。
+脚本 / CI 等非终端环境、显式指定 `--uv` 等 flag、或使用 `-y` 时跳过交互；交互式批量配置任一工具失败时会回滚本次已完成的配置。
 
 **默认配置作用域（自动检测）：**
 
@@ -114,18 +115,18 @@ cnpip set --venv    # 当前虚拟环境配置
 cnpip set --uv      # 写入 uv 配置（~/.config/uv/uv.toml）
 ```
 
-### 3. 取消自定义镜像源
+### 3. 恢复 cnpip 的配置
 
 ```bash
-cnpip unset         # 取消 pip 镜像源设置
-cnpip unset --uv    # 移除 uv 镜像源配置
+cnpip unset         # 恢复 cnpip 修改前的 pip 配置
+cnpip unset --uv    # 恢复 cnpip 修改前的 uv 配置
 ```
 
 同样支持指定 pip 作用域：
 
 ```bash
-cnpip unset --user
-cnpip unset --global
+cnpip unset --user    # 恢复用户级配置
+cnpip unset --global  # 恢复系统级配置
 ```
 
 ### 4. 诊断与信息
@@ -137,7 +138,7 @@ cnpip info
 示例输出：
 
 ```
-cnpip 版本: v1.3.1
+cnpip 版本: v1.6.0
 Python 路径: /usr/bin/python3
 操作系统: Linux 5.15.0
 Pip 版本: pip 24.0 from ...
@@ -162,7 +163,7 @@ cnpip set --pdm            # 测速并配置 pdm（用户级 pdm config）
 cnpip set tuna --poetry    # 配置当前 poetry 项目使用清华镜像（写入 pyproject.toml）
 cnpip set --conda          # 测速并配置 conda（写入 ~/.condarc）
 
-cnpip unset --pdm          # 恢复对应工具的默认源
+cnpip unset --pdm          # 恢复 cnpip 修改前的配置
 cnpip unset --poetry
 cnpip unset --conda
 ```
@@ -175,7 +176,7 @@ cnpip unset --conda
 
 ### 6. 更新镜像源列表
 
-获取最新的镜像源列表（依次尝试 jsDelivr CDN 与 GitHub，无需科学上网）：
+获取最新的镜像源列表（依次尝试 jsDelivr CDN 与 GitHub，无需科学上网）。远程清单允许新增镜像，但只接受合法名称、HTTPS、无凭据/端口/查询参数的 PEP 503 地址：
 
 ```bash
 cnpip sync
@@ -186,19 +187,28 @@ cnpip sync
 `cnpip` 会根据当前环境自动选择修改哪个配置文件，通过 `cnpip info` 可查看实际生效的路径。
 
 - **pip 配置**：只修改 `global.index-url`，不影响其他配置项；`global.trusted-host` 仅在镜像为 http 协议时写入（trusted-host 会跳过 TLS 校验，https 镜像无需也不应设置）
-- **uv 配置**：写入 `[[index]]` 块到 `uv.toml`，不影响其他 uv 配置
+- **uv 配置**：写入带 `name = "cnpip"` 的 `[[index]]` 块到 `uv.toml`，保留其他 index
 - **pdm 配置**：通过 `pdm config` 写入用户级 `config.toml`
 - **poetry 配置**：通过 `poetry source add` 写入当前项目 `pyproject.toml`
-- **conda 配置**：通过 `conda config` 写入 `~/.condarc`
+- **conda 配置**：通过 `conda config --prepend/--set` 写入 `~/.condarc`，保留已有 default channel
+
+## 安全与恢复
+
+- 每次设置前，cnpip 会记录目标配置的完整修改前内容，并将修改后的指纹写入 `~/.cnpip/state.json`。状态目录为用户私有，状态文件权限为 600。
+- `unset` 只恢复由当前 cnpip 操作管理的配置；如果文件或配置值在设置后被其他程序改过，cnpip 会拒绝覆盖并返回非零退出码。
+- 文件写入采用同目录临时文件加原子替换，避免进程中断留下截断配置。交互式一次配置多个工具时，后续工具失败会反向恢复已成功的工具。
+- `cnpip sync` 会校验远程清单，非法地址不会写入用户配置；测速使用真实 `simple/pip/` 页面，连续三次请求取中位数，至少两次成功才认为镜像可用。
 
 ## 常见问题
 
-### 1. 如何恢复为默认镜像源？
+### 1. 如何恢复 cnpip 修改前的配置？
 
 ```bash
-cnpip unset        # 恢复 pip 默认源
-cnpip unset --uv   # 恢复 uv 默认源
+cnpip unset        # 恢复 pip 修改前的配置
+cnpip unset --uv   # 恢复 uv 修改前的配置
 ```
+
+如果配置文件已经被手动修改，cnpip 会提示检测到漂移并拒绝覆盖；请先人工确认差异，再决定是否恢复。
 
 ### 2. 在 uvx 环境中使用时配置会持久化吗？
 
