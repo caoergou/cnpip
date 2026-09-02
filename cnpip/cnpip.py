@@ -562,7 +562,7 @@ def update_pip_config(mirror_url, scope_args):
 
     if not is_pip_installed():
         print(f"\n检测到当前环境未安装 pip（可能是 uvx 环境）。")
-        if '--venv' in scope_args:
+        if '--site' in scope_args:
             print("错误: --venv 在 uvx 临时环境中无意义，配置会随环境消失。")
             print("建议改用 --user 写入用户级 pip 配置，或 --uv 配置 uv 镜像源。")
             return False
