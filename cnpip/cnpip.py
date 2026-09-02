@@ -2,8 +2,11 @@ import subprocess
 import sys
 import os
 import re
+import json
+import configparser
 import argparse
 import time
+import statistics
 import socket
 import platform
 import shutil
@@ -14,6 +17,7 @@ from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor
 
 from .mirrors import MIRRORS, update_mirrors_from_remote
+from .state import ManagedFileChange, atomic_write_text, restore_managed_file
 from .integrations import (
     CONDA_MIRRORS,
     get_pdm_mirror,
@@ -27,33 +31,47 @@ from .integrations import (
 from . import __version__
 
 MIN_PYTHON_VERSION = (3, 7)
+MIRROR_PROBE_COUNT = 3
+MIRROR_PROBE_PROJECT = "pip"
+MIRROR_PROBE_USER_AGENT = f"cnpip/{__version__}"
 if sys.version_info < MIN_PYTHON_VERSION:
     sys.stderr.write(f"错误: cnpip需要 Python {MIN_PYTHON_VERSION[0]}.{MIN_PYTHON_VERSION[1]} 或更高版本。\n")
     sys.exit(1)
 
 
 def measure_mirror_speed(name, url):
-    """测速函数"""
-    try:
-        start_time = time.monotonic()
-        # Use a short timeout to fail fast
-        req = urllib.request.Request(url, method='HEAD')
-        with urllib.request.urlopen(req, timeout=5) as response:
-            if 200 <= response.status < 400:
-                end_time = time.monotonic()
-                duration = round((end_time - start_time) * 1000, 2)
-                return name, duration, url, None
-            else:
-                return name, float('inf'), url, f"Status {response.status}"
-    except urllib.error.URLError as e:
-        reason = str(e.reason)
-        if isinstance(e.reason, socket.timeout):
-             reason = "Timeout"
-        return name, float('inf'), url, reason or "Error"
-    except socket.timeout:
-        return name, float('inf'), url, "Timeout"
-    except Exception as e:
-        return name, float('inf'), url, str(e) or "Error"
+    """对真实 PEP 503 项目页面执行多次 GET，返回响应延迟中位数。"""
+    probe_url = f"{url.rstrip('/')}/{MIRROR_PROBE_PROJECT}/"
+    durations = []
+    last_error = None
+    for _ in range(MIRROR_PROBE_COUNT):
+        try:
+            start_time = time.monotonic()
+            req = urllib.request.Request(
+                probe_url,
+                method='GET',
+                headers={'Accept': 'text/html', 'User-Agent': MIRROR_PROBE_USER_AGENT},
+            )
+            with urllib.request.urlopen(req, timeout=5) as response:
+                payload = response.read(64 * 1024)
+                if not 200 <= response.status < 400:
+                    last_error = f"Status {response.status}"
+                    continue
+                if not payload:
+                    last_error = "Empty response"
+                    continue
+                durations.append((time.monotonic() - start_time) * 1000)
+        except urllib.error.HTTPError as e:
+            last_error = f"Status {e.code}"
+        except urllib.error.URLError as e:
+            last_error = "Timeout" if isinstance(e.reason, socket.timeout) else (str(e.reason) or "Error")
+        except socket.timeout:
+            last_error = "Timeout"
+        except Exception as e:
+            last_error = str(e) or "Error"
+    if len(durations) < 2:
+        return name, float('inf'), url, last_error or "Unstable"
+    return name, round(statistics.median(durations), 2), url, None
 
 
 def list_mirrors():
@@ -87,7 +105,7 @@ def print_mirror_results(results):
     time_width = 20
     url_width = max(len(url) for url in MIRRORS.values()) + 2
 
-    header = f"{'镜像名称':<{name_width}}\t{'耗时/状态':<{time_width}}\t{'地址':<{url_width}}"
+    header = f"{'镜像名称':<{name_width}}\t{'响应延迟/状态':<{time_width}}\t{'地址':<{url_width}}"
     print(header)
     print("-" * (name_width + time_width + url_width))
 
@@ -106,6 +124,22 @@ def needs_trusted_host(mirror_url):
     return urlparse(mirror_url).scheme == 'http'
 
 
+def redact_url(url):
+    """诊断输出中隐藏 URL 内可能存在的用户名/密码。"""
+    if not url:
+        return url
+    try:
+        parsed = urlparse(url)
+        if not parsed.username and not parsed.password:
+            return url
+        host = parsed.hostname or ''
+        if parsed.port is not None:
+            host = f"{host}:{parsed.port}"
+        return parsed._replace(netloc=f"***@{host}").geturl()
+    except (TypeError, ValueError):
+        return "<已隐藏的无效 URL>"
+
+
 def is_pip_installed():
     """检查 pip 是否安装"""
     try:
@@ -114,7 +148,7 @@ def is_pip_installed():
                        stdout=subprocess.PIPE,
                        stderr=subprocess.PIPE)
         return True
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, OSError):
         return False
 
 
@@ -326,21 +360,60 @@ def get_uv_index_url():
         return None
     try:
         content = config_path.read_text(encoding='utf-8', errors='replace')
-        in_index_block = False
-        for line in content.splitlines():
-            stripped = line.strip()
-            if stripped == '[[index]]':
-                in_index_block = True
-                continue
-            if in_index_block:
-                if stripped.startswith('['):
-                    break  # 进入了下一个块
-                match = re.match(r'^url\s*=\s*["\'](.+)["\']', stripped)
-                if match:
-                    return match.group(1)
-        return None
+        blocks = _get_uv_index_blocks(content)
+        # 优先显示 cnpip 自己管理的 block；否则兼容旧版/用户配置中的默认 block。
+        for block in blocks:
+            if _uv_block_value(block, 'name') == 'cnpip':
+                return _uv_block_value(block, 'url')
+        for block in blocks:
+            if _uv_block_value(block, 'default') == 'true':
+                return _uv_block_value(block, 'url')
+        return _uv_block_value(blocks[0], 'url') if blocks else None
     except Exception:
         return None
+
+
+def _get_uv_index_blocks(content):
+    """按文本边界提取 uv 的 [[index]] block，不解析或改写其他 TOML。"""
+    lines = content.splitlines(keepends=True)
+    blocks = []
+    starts = [i for i, line in enumerate(lines) if line.strip() == '[[index]]']
+    for start in starts:
+        end = start + 1
+        while end < len(lines) and not lines[end].strip().startswith('['):
+            end += 1
+        blocks.append(''.join(lines[start:end]))
+    return blocks
+
+
+def _uv_block_value(block, key):
+    match = re.search(
+        rf'^\s*{re.escape(key)}\s*=\s*(?:["\']([^"\']*)["\']|([^\s#]+))',
+        block,
+        re.MULTILINE,
+    )
+    return (match.group(1) if match and match.group(1) is not None
+            else match.group(2) if match else None)
+
+
+def _remove_cnpip_uv_blocks(content):
+    """只移除带 name = \"cnpip\" 的 block，保留用户的其他 index。"""
+    lines = content.splitlines(keepends=True)
+    result = []
+    i = 0
+    while i < len(lines):
+        if lines[i].strip() != '[[index]]':
+            result.append(lines[i])
+            i += 1
+            continue
+        end = i + 1
+        while end < len(lines) and not lines[end].strip().startswith('['):
+            end += 1
+        block = ''.join(lines[i:end])
+        if _uv_block_value(block, 'name') != 'cnpip':
+            result.extend(lines[i:end])
+        i = end
+    return ''.join(result)
 
 
 def update_uv_config(mirror_url):
@@ -349,76 +422,43 @@ def update_uv_config(mirror_url):
     不引入外部依赖，直接操作文本。
     - 若文件不存在 → 创建并写入
     - 若存在但无 [[index]] → 追加
-    - 若存在且有 [[index]] → 移除旧块再追加（支持多个 [[index]]）
+    - 只替换此前由 cnpip 写入的 named block，不删除用户的其他 index
     返回 (success: bool, message: str)
     """
     config_path = get_uv_config_path()
-    new_block = f'[[index]]\nurl = "{mirror_url}"\ndefault = true\n'
+    change, error = ManagedFileChange.begin("uv:user", config_path)
+    if not change:
+        return False, error
+    new_block = (f'[[index]]\nname = {json.dumps("cnpip")}\n'
+                 f'url = {json.dumps(mirror_url)}\ndefault = true\n')
     try:
         if config_path.exists():
             content = config_path.read_text(encoding='utf-8', errors='replace')
-            if '[[index]]' in content:
-                # 移除所有现有 [[index]] 块
-                lines = content.splitlines(keepends=True)
-                new_lines = []
-                i = 0
-                while i < len(lines):
-                    if lines[i].strip() == '[[index]]':
-                        i += 1
-                        while i < len(lines):
-                            if lines[i].strip().startswith('['):
-                                break
-                            i += 1
-                    else:
-                        new_lines.append(lines[i])
-                        i += 1
-                clean = ''.join(new_lines).rstrip('\n')
-                new_content = (clean + '\n\n' + new_block) if clean else new_block
-            else:
-                new_content = content.rstrip('\n') + '\n\n' + new_block
+            clean = _remove_cnpip_uv_blocks(content).lstrip('\n')
+            new_content = new_block + ('\n' + clean if clean else '')
         else:
             config_path.parent.mkdir(parents=True, exist_ok=True)
             new_content = new_block
 
-        config_path.write_text(new_content, encoding='utf-8')
+        atomic_write_text(config_path, new_content)
+        success, error = change.commit()
+        if not success:
+            return False, error
         return True, f"成功设置 uv 镜像源为 '{mirror_url}'\n配置文件: {config_path}"
     except PermissionError:
+        change.abort()
         return False, f"权限不足，无法写入 {config_path}"
     except Exception as e:
+        change.abort()
         return False, f"写入 uv 配置失败: {e}"
 
 
 def unset_uv_config():
     """
-    从 uv 配置文件中移除所有 [[index]] 块。
+    恢复 cnpip 管理的 uv 配置，检测到用户漂移时拒绝覆盖。
     返回 (success: bool, message: str)
     """
-    config_path = get_uv_config_path()
-    if not config_path.exists():
-        return True, "uv 配置文件不存在，无需操作"
-    try:
-        content = config_path.read_text(encoding='utf-8', errors='replace')
-        if '[[index]]' not in content:
-            return True, "uv 配置中未设置 index，无需操作"
-
-        lines = content.splitlines(keepends=True)
-        new_lines = []
-        i = 0
-        while i < len(lines):
-            if lines[i].strip() == '[[index]]':
-                i += 1
-                while i < len(lines):
-                    if lines[i].strip().startswith('['):
-                        break
-                    i += 1
-            else:
-                new_lines.append(lines[i])
-                i += 1
-
-        config_path.write_text(''.join(new_lines), encoding='utf-8')
-        return True, f"成功移除 uv 镜像源配置\n配置文件: {config_path}"
-    except Exception as e:
-        return False, f"移除 uv 配置失败: {e}"
+    return restore_managed_file("uv:user", get_uv_config_path())
 
 
 def get_pip_config_path_for_scope(scope):
@@ -445,77 +485,65 @@ def get_pip_config_path_for_scope(scope):
             return Path('/Library/Application Support/pip/pip.conf')
         else:
             return Path('/etc/pip.conf')
+    elif scope == 'site':
+        return Path(sys.prefix) / ('pip.ini' if system == 'Windows' else 'pip.conf')
     return None
 
 
 def write_pip_config_directly(mirror_url, scope):
     """
     不依赖 pip 命令，直接用 configparser 写入 pip 配置文件。
-    适用于 uvx 等无 pip 的环境中用户明确指定了 --user / --global。
-    scope: 'user' | 'global'
+    适用于 uvx 等无 pip 的环境中用户明确指定了作用域。
+    scope: 'user' | 'global' | 'site'
     返回 (success: bool, message: str)
     """
-    import configparser
     config_path = get_pip_config_path_for_scope(scope)
     if config_path is None:
         return False, f"不支持的作用域: {scope}"
 
-    config = configparser.ConfigParser()
-    if config_path.exists():
-        config.read(config_path, encoding='utf-8')
-    if not config.has_section('global'):
-        config.add_section('global')
-    config.set('global', 'index-url', mirror_url)
-    # trusted-host 会跳过 TLS 校验，仅对 http 镜像有必要；https 镜像应移除残留配置
-    if needs_trusted_host(mirror_url):
-        config.set('global', 'trusted-host', urlparse(mirror_url).netloc)
-    elif config.has_option('global', 'trusted-host'):
-        config.remove_option('global', 'trusted-host')
-
+    change, error = ManagedFileChange.begin(f"pip:{scope}", config_path)
+    if not change:
+        return False, error
     try:
+        config = configparser.ConfigParser(interpolation=None)
+        if config_path.exists():
+            config.read(config_path, encoding='utf-8')
+        if not config.has_section('global'):
+            config.add_section('global')
+        config.set('global', 'index-url', mirror_url)
+        # trusted-host 会跳过 TLS 校验，仅对 http 镜像有必要；https 镜像应移除残留配置
+        if needs_trusted_host(mirror_url):
+            config.set('global', 'trusted-host', urlparse(mirror_url).netloc)
+        elif config.has_option('global', 'trusted-host'):
+            config.remove_option('global', 'trusted-host')
         config_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(config_path, 'w', encoding='utf-8') as f:
-            config.write(f)
+        from io import StringIO
+        stream = StringIO()
+        config.write(stream)
+        atomic_write_text(config_path, stream.getvalue())
+        success, error = change.commit()
+        if not success:
+            return False, error
         return True, f"成功设置 pip 镜像源为 '{mirror_url}'\n配置文件: {config_path}"
     except PermissionError:
+        change.abort()
         hint = get_global_scope_hint() if scope == 'global' else ''
         return False, f"权限不足，无法写入 {config_path}" + (f"\n{hint}" if hint else '')
     except Exception as e:
+        change.abort()
         return False, f"写入失败: {e}"
 
 
 def unset_pip_config_directly(scope):
     """
-    不依赖 pip 命令，直接从 pip 配置文件中移除镜像源配置。
-    scope: 'user' | 'global'
+    不依赖 pip 命令，恢复 cnpip 管理的 pip 配置。
+    scope: 'user' | 'global' | 'site'
     返回 (success: bool, message: str)
     """
-    import configparser
     config_path = get_pip_config_path_for_scope(scope)
     if config_path is None:
         return False, f"不支持的作用域: {scope}"
-    if not config_path.exists():
-        return True, "pip 配置文件不存在，无需操作"
-
-    config = configparser.ConfigParser()
-    config.read(config_path, encoding='utf-8')
-    changed = False
-    for key in ('index-url', 'trusted-host'):
-        if config.has_option('global', key):
-            config.remove_option('global', key)
-            changed = True
-
-    if not changed:
-        return True, "pip 配置中未设置镜像源，无需操作"
-
-    try:
-        with open(config_path, 'w', encoding='utf-8') as f:
-            config.write(f)
-        return True, f"成功移除 pip 镜像源配置\n配置文件: {config_path}"
-    except PermissionError:
-        return False, f"权限不足，无法写入 {config_path}"
-    except Exception as e:
-        return False, f"移除失败: {e}"
+    return restore_managed_file(f"pip:{scope}", config_path)
 
 
 def update_pip_config(mirror_url, scope_args):
@@ -530,12 +558,14 @@ def update_pip_config(mirror_url, scope_args):
         if '--venv' in scope_args:
             print("错误: --venv 在 uvx 临时环境中无意义，配置会随环境消失。")
             print("建议改用 --user 写入用户级 pip 配置，或 --uv 配置 uv 镜像源。")
-            return
-        elif '--user' in scope_args or '--global' in scope_args:
-            direct_scope = 'global' if '--global' in scope_args else 'user'
+            return False
+        elif '--user' in scope_args or '--global' in scope_args or '--site' in scope_args:
+            direct_scope = ('global' if '--global' in scope_args
+                            else 'site' if '--site' in scope_args else 'user')
             print(f"正在直接写入 pip {scope_desc}（无需 pip 命令）...")
             success, msg = write_pip_config_directly(mirror_url, direct_scope)
             print(msg)
+            return success
         else:
             # 自动模式兜底：优先配置 uv
             uv = detect_uv_binary()
@@ -543,47 +573,22 @@ def update_pip_config(mirror_url, scope_args):
                 print("检测到 uv 已安装，自动配置 uv 镜像源...")
                 success, msg = update_uv_config(mirror_url)
                 print(msg)
+                return success
             else:
                 print(f"请复制以下命令在终端运行以生效配置 ({scope_desc}):")
                 print(f"pip config set {scope_str} global.index-url {mirror_url}")
                 if set_trusted:
                     print(f"pip config set {scope_str} global.trusted-host {host}")
-        return
+        return False
 
+    direct_scope = 'global' if '--global' in scope_args else ('site' if '--site' in scope_args else 'user')
     print(f"\n正在修改 [{scope_desc}] ...", flush=True)
-
-    # 获取修改前配置
-    old_index, old_host = get_pip_config()
-    print(f"修改前配置: index-url='{old_index or '默认'}', trusted-host='{old_host or '未设置'}'", flush=True)
-
-    try:
-        # 注意: 这里的 subprocess output 被默认显示出来了，可能需要隐藏，或者保留以显示 pip 的反馈
-        # 用户的需求是清晰的输出，pip config set 会输出 "Writing to ..."
-        # 我们保留它，因为它告诉用户文件位置
-        subprocess.run([sys.executable, '-m', 'pip', 'config', 'set'] + scope_args + ['global.index-url', mirror_url], check=True)
-        if set_trusted:
-            subprocess.run([sys.executable, '-m', 'pip', 'config', 'set'] + scope_args + ['global.trusted-host', host], check=True)
-        else:
-            # https 镜像无需 trusted-host，清理可能残留的旧配置（不存在时 pip 会报错，忽略即可）
-            subprocess.run([sys.executable, '-m', 'pip', 'config', 'unset'] + scope_args + ['global.trusted-host'],
-                           check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-        # 获取修改后配置
-        new_index, new_host = get_pip_config()
-        print(f"修改后配置: index-url='{new_index or '默认'}', trusted-host='{new_host or '未设置'}'")
-
-        print(f"成功设置 pip 镜像源为 '{mirror_url}'")
-    except subprocess.CalledProcessError:
-        print(f"\n警告: 无法自动修改 pip 配置文件 (可能是权限问题)。")
-        if '--global' in scope_args:
-            print(get_global_scope_hint())
-        print(f"\n请尝试手动运行以下命令:")
-        print(f"pip config set {scope_str} global.index-url {mirror_url}")
-        if set_trusted:
-            print(f"pip config set {scope_str} global.trusted-host {host}")
+    success, msg = write_pip_config_directly(mirror_url, direct_scope)
+    print(msg)
+    return success
 
 
-def unset_pip_mirror(scope_args) -> None:
+def unset_pip_mirror(scope_args):
     """取消pip镜像源设置"""
     scope_str = " ".join(scope_args) if scope_args else "auto"
 
@@ -591,23 +596,23 @@ def unset_pip_mirror(scope_args) -> None:
         print(f"\n检测到当前环境未安装 pip（可能是 uvx 环境）。")
         if '--venv' in scope_args:
             print("错误: --venv 在 uvx 临时环境中无意义。")
-            return
-        elif '--user' in scope_args or '--global' in scope_args:
-            direct_scope = 'global' if '--global' in scope_args else 'user'
+            return False
+        elif '--user' in scope_args or '--global' in scope_args or '--site' in scope_args:
+            direct_scope = ('global' if '--global' in scope_args
+                            else 'site' if '--site' in scope_args else 'user')
             success, msg = unset_pip_config_directly(direct_scope)
             print(msg)
+            return success
         else:
             print(f"请复制以下命令在终端运行以取消配置:")
             print(f"pip config unset {scope_str} global.index-url")
             print(f"pip config unset {scope_str} global.trusted-host")
-        return
+        return False
 
-    try:
-        subprocess.run([sys.executable, '-m', 'pip', 'config', 'unset'] + scope_args + ['global.index-url'], check=True)
-        subprocess.run([sys.executable, '-m', 'pip', 'config', 'unset'] + scope_args + ['global.trusted-host'], check=True)
-        print("成功取消 pip 镜像源设置，已恢复为默认源")
-    except subprocess.CalledProcessError as e:
-         print(f"取消 pip 镜像源设置时出错: {e}")
+    direct_scope = 'global' if '--global' in scope_args else ('site' if '--site' in scope_args else 'user')
+    success, msg = unset_pip_config_directly(direct_scope)
+    print(msg)
+    return success
 
 
 def get_pip_config_files():
@@ -670,7 +675,7 @@ def show_info():
 
     print("\n--- 当前 Pip 配置 ---")
     index_url, trusted_host = get_pip_config()
-    print(f"当前镜像源: {index_url or '默认 (https://pypi.org/simple)'}")
+    print(f"当前镜像源: {redact_url(index_url) or '默认 (https://pypi.org/simple)'}")
     print(f"信任主机: {trusted_host or '未设置'}")
 
     # 显示实际配置文件路径
@@ -701,7 +706,7 @@ def show_info():
         print(f"uv 配置文件: {uv_config_path}")
 
         uv_index = get_uv_index_url()
-        print(f"uv 镜像源: {uv_index or '默认 (https://pypi.org/simple)'}")
+        print(f"uv 镜像源: {redact_url(uv_index) or '默认 (https://pypi.org/simple)'}")
     else:
         print("uv: 未安装")
 
@@ -726,7 +731,7 @@ def show_info():
         if tool == 'pdm':
             pdm_mirror = get_pdm_mirror()
             if pdm_mirror:
-                print(f"pdm 镜像源: {pdm_mirror}")
+                print(f"pdm 镜像源: {redact_url(pdm_mirror)}")
 
 
 # === 交互式 set ===
@@ -777,8 +782,7 @@ def parse_tool_selection(raw, tool_names, default):
 def apply_mirror_to_tool(tool, mirror_name, mirror_url, args):
     """将镜像源应用到单个工具，返回是否成功。"""
     if tool == 'pip':
-        update_pip_config(mirror_url, get_scope_args(args))
-        return True
+        return update_pip_config(mirror_url, get_scope_args(args) if args else [])
     if tool == 'uv':
         success, msg = update_uv_config(mirror_url)
     elif tool == 'pdm':
@@ -843,12 +847,33 @@ def run_interactive_set(args):
         mirror_name = args.mirror
 
     mirror_url = MIRRORS[mirror_name]
-    all_ok = True
+    applied_tools = []
     for tool in selection:
         print(f"\n--- {tool} ---")
         if not apply_mirror_to_tool(tool, mirror_name, mirror_url, args):
-            all_ok = False
-    sys.exit(0 if all_ok else 1)
+            print("批量配置失败，正在回滚本次已完成的配置...")
+            for applied_tool in reversed(applied_tools):
+                success, message = rollback_mirror_from_tool(applied_tool, args)
+                if not success:
+                    print(f"回滚 {applied_tool} 失败: {message}")
+            sys.exit(1)
+        applied_tools.append(tool)
+    sys.exit(0)
+
+
+def rollback_mirror_from_tool(tool, args):
+    """回滚交互式批量 set 中已经成功的单个工具。"""
+    if tool == 'pip':
+        return unset_pip_mirror(get_scope_args(args))
+    if tool == 'uv':
+        return unset_uv_config()
+    if tool == 'pdm':
+        return unset_pdm_mirror()
+    if tool == 'poetry':
+        return unset_poetry_mirror()
+    if tool == 'conda':
+        return unset_conda_mirror()
+    return False, f"不支持回滚的工具: {tool}"
 
 
 _COMMANDS = frozenset({"list", "set", "unset", "info", "sync", "update"})
@@ -860,7 +885,7 @@ cnpip - 快速切换 pip 镜像源
   cnpip                   测速并自动换源
   cnpip <镜像源>          使用指定镜像（如 tuna, ustc, aliyun）
   cnpip list              测速所有镜像
-  cnpip unset             恢复默认源
+  cnpip unset             恢复 cnpip 修改前的配置
   cnpip info              显示环境和配置信息
   cnpip sync              更新镜像源列表
 
@@ -916,7 +941,10 @@ def main():
         args.command = 'sync'
 
     if args.command == "list":
-        list_mirrors()
+        results = list_mirrors()
+        if not any(error is None for _name, _speed, _url, error in results):
+            sys.exit(1)
+        return
     elif args.command == "set":
         # 交互式：TTY 下未指定任何工具/作用域 flag 时，扫描环境让用户选择要配置的工具
         explicit_flags = (args.uv or args.pdm or args.poetry or args.conda
@@ -996,7 +1024,10 @@ def main():
                     sys.exit(1)
             else:
                 scope_args = get_scope_args(args)
-                update_pip_config(mirror_url, scope_args)
+                success = update_pip_config(mirror_url, scope_args)
+                if not success:
+                    sys.exit(1)
+                return
     elif args.command == "unset":
         if args.uv:
             success, msg = unset_uv_config()
@@ -1016,8 +1047,8 @@ def main():
             sys.exit(0 if success else 1)
         else:
             scope_args = get_scope_args(args)
-            unset_pip_mirror(scope_args)
-            sys.exit(0)
+            success = unset_pip_mirror(scope_args)
+            sys.exit(0 if success else 1)
     elif args.command == "info":
         show_info()
     elif args.command == "sync":
