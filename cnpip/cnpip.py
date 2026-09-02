@@ -14,6 +14,16 @@ from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor
 
 from .mirrors import MIRRORS, update_mirrors_from_remote
+from .integrations import (
+    CONDA_MIRRORS,
+    get_pdm_mirror,
+    set_conda_mirror,
+    set_pdm_mirror,
+    set_poetry_mirror,
+    unset_conda_mirror,
+    unset_pdm_mirror,
+    unset_poetry_mirror,
+)
 from . import __version__
 
 MIN_PYTHON_VERSION = (3, 7)
@@ -61,6 +71,15 @@ def list_mirrors():
     print_mirror_results(results)
     print(f"\n测速总耗时: {total_time} ms")
     return results
+
+
+def choose_fastest_mirror(mirrors):
+    """并发测速并返回最快的镜像名，全部失败返回 None。"""
+    with ThreadPoolExecutor(max_workers=len(mirrors)) as executor:
+        futures = [executor.submit(measure_mirror_speed, name, url) for name, url in mirrors.items()]
+        results = [f.result() for f in futures]
+    results.sort(key=lambda x: x[1])
+    return next((name for name, _speed, _url, error in results if error is None), None)
 
 
 def print_mirror_results(results):
@@ -686,6 +705,29 @@ def show_info():
     else:
         print("uv: 未安装")
 
+    # 其他包管理工具
+    print("\n--- 其他包管理工具 ---")
+    for tool in ('pdm', 'poetry', 'conda'):
+        binary = shutil.which(tool)
+        if not binary:
+            print(f"{tool}: 未安装")
+            continue
+        try:
+            ver_result = subprocess.run(
+                [binary, '--version'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                encoding='utf-8',
+                errors='replace'
+            )
+            print(f"{tool}: {ver_result.stdout.strip() or '已安装'}")
+        except Exception:
+            print(f"{tool}: 已安装 (版本获取失败)")
+        if tool == 'pdm':
+            pdm_mirror = get_pdm_mirror()
+            if pdm_mirror:
+                print(f"pdm 镜像源: {pdm_mirror}")
+
 
 def main():
     """主函数，解析命令行参数并执行相应操作"""
@@ -698,12 +740,34 @@ def main():
     group.add_argument("--user", action="store_true", help="设置当前用户配置")
     group.add_argument("--venv", "--site", dest="venv", action="store_true", help="设置当前虚拟环境配置")
     group.add_argument("--uv", dest="uv", action="store_true", help="配置 uv 镜像源 (写入 uv.toml，不修改 pip)")
+    group.add_argument("--pdm", dest="pdm", action="store_true", help="配置 pdm 镜像源 (用户级 pdm config)")
+    group.add_argument("--poetry", dest="poetry", action="store_true", help="配置 poetry 镜像源 (当前项目 pyproject.toml)")
+    group.add_argument("--conda", dest="conda", action="store_true", help="配置 conda 镜像源 (写入 ~/.condarc)")
 
     args = parser.parse_args()
 
     if args.command == "list":
         list_mirrors()
     elif args.command == "set":
+        # conda 使用独立的镜像表（anaconda 镜像与 pypi 镜像是不同的服务）
+        if args.conda:
+            if args.mirror is None:
+                print("未指定镜像源，即将对支持 conda 的镜像测速...")
+                conda_mirror_name = choose_fastest_mirror(CONDA_MIRRORS)
+                if conda_mirror_name is None:
+                    print("错误: 无法连接到任何 conda 镜像源")
+                    sys.exit(1)
+                print(f"自动选择最快的镜像源: {conda_mirror_name}")
+            elif args.mirror not in CONDA_MIRRORS:
+                print(f"错误: 镜像源 '{args.mirror}' 不提供 conda 镜像")
+                print(f"支持 conda 的镜像源: {', '.join(CONDA_MIRRORS)}")
+                sys.exit(1)
+            else:
+                conda_mirror_name = args.mirror
+            success, msg = set_conda_mirror(CONDA_MIRRORS[conda_mirror_name])
+            print(msg)
+            sys.exit(0 if success else 1)
+
         # 解析镜像名（set/unset 共用）
         if args.mirror is None:
             print("未指定镜像源，即将测速并选择最快的镜像源...")
@@ -732,6 +796,14 @@ def main():
             print(msg)
             if not success:
                 sys.exit(1)
+        elif args.pdm:
+            success, msg = set_pdm_mirror(mirror_url)
+            print(msg)
+            sys.exit(0 if success else 1)
+        elif args.poetry:
+            success, msg = set_poetry_mirror(mirror_url)
+            print(msg)
+            sys.exit(0 if success else 1)
         else:
             env = detect_environment()
             if env == 'uvx' and not args.global_ and not args.user and not args.venv:
@@ -752,6 +824,18 @@ def main():
     elif args.command == "unset":
         if args.uv:
             success, msg = unset_uv_config()
+            print(msg)
+            sys.exit(0 if success else 1)
+        elif args.pdm:
+            success, msg = unset_pdm_mirror()
+            print(msg)
+            sys.exit(0 if success else 1)
+        elif args.poetry:
+            success, msg = unset_poetry_mirror()
+            print(msg)
+            sys.exit(0 if success else 1)
+        elif args.conda:
+            success, msg = unset_conda_mirror()
             print(msg)
             sys.exit(0 if success else 1)
         else:
