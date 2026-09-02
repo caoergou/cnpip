@@ -4,6 +4,9 @@ import urllib.request
 import urllib.error
 import socket
 from pathlib import Path
+from urllib.parse import urlparse
+
+from .state import atomic_write_text
 
 # 硬编码作为后备
 DEFAULT_MIRRORS = {
@@ -17,6 +20,7 @@ DEFAULT_MIRRORS = {
     "default": "https://pypi.org/simple"
 }
 
+_MIRROR_NAME_RE = r'^[a-z0-9][a-z0-9_-]{0,31}$'
 # 按顺序尝试：jsDelivr CDN 在中国大陆可达，raw.githubusercontent.com 作为最终兜底
 REMOTE_MIRRORS_URLS = [
     "https://cdn.jsdelivr.net/gh/caoergou/cnpip@main/cnpip/mirrors.json",
@@ -25,6 +29,39 @@ REMOTE_MIRRORS_URLS = [
 ]
 USER_CONFIG_DIR = Path.home() / ".cnpip"
 USER_MIRRORS_FILE = USER_CONFIG_DIR / "mirrors.json"
+
+
+def _validate_mirrors(data, strict_remote=False):
+    """校验镜像清单；远程清单只强化传输协议与地址结构约束。"""
+    import re
+
+    if not isinstance(data, dict) or not data:
+        raise ValueError("镜像清单必须是非空对象")
+    if len(data) > 128:
+        raise ValueError("镜像清单条目过多")
+
+    for name, url in data.items():
+        if not isinstance(name, str) or not re.fullmatch(_MIRROR_NAME_RE, name):
+            raise ValueError(f"镜像名称无效: {name!r}")
+        if not isinstance(url, str) or len(url) > 512:
+            raise ValueError(f"镜像地址无效: {name}")
+        try:
+            parsed = urlparse(url)
+            hostname = parsed.hostname
+            port = parsed.port
+        except ValueError as exc:
+            raise ValueError(f"镜像地址无效: {name}: {exc}")
+        if ((parsed.scheme != 'https') if strict_remote
+                else parsed.scheme not in ('http', 'https')):
+            raise ValueError(f"镜像必须使用 HTTPS: {name}")
+        if any(char.isspace() or ord(char) < 32 for char in url):
+            raise ValueError(f"镜像地址包含非法空白字符: {name}")
+        if not hostname or parsed.username or parsed.password or port is not None:
+            raise ValueError(f"镜像地址不得包含凭据或端口: {name}")
+        if (parsed.params or parsed.query or parsed.fragment
+                or not parsed.path.rstrip('/').endswith('/simple')):
+            raise ValueError(f"镜像地址必须是 PEP 503 simple 路径: {name}")
+    return {name: url.rstrip('/') for name, url in data.items()}
 
 def get_local_mirrors_file():
     """返回打包的 mirrors.json 路径"""
@@ -41,7 +78,7 @@ def load_mirrors():
     if USER_MIRRORS_FILE.exists():
         try:
             with open(USER_MIRRORS_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                return _validate_mirrors(json.load(f))
         except Exception:
             pass # 失败则后备
 
@@ -50,22 +87,23 @@ def load_mirrors():
     if os.path.exists(pkg_file):
         try:
             with open(pkg_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                return _validate_mirrors(json.load(f))
         except Exception:
             pass
 
     # 3. 硬编码
-    return DEFAULT_MIRRORS.copy()
+    return _validate_mirrors(DEFAULT_MIRRORS.copy())
 
 def _fetch_mirrors_json(url, timeout=5):
     """从单个 URL 获取并解析 mirrors.json，失败抛出异常。"""
     with urllib.request.urlopen(url, timeout=timeout) as response:
         if response.status != 200:
             raise urllib.error.URLError(f"HTTP {response.status}")
-        data = json.loads(response.read().decode('utf-8'))
-        if not isinstance(data, dict):
-            raise ValueError("远程 JSON 格式无效")
-        return data
+        raw = response.read(64 * 1024 + 1)
+        if len(raw) > 64 * 1024:
+            raise ValueError("远程镜像清单过大")
+        data = json.loads(raw.decode('utf-8'))
+        return _validate_mirrors(data, strict_remote=True)
 
 
 def update_mirrors_from_remote():
@@ -87,9 +125,12 @@ def update_mirrors_from_remote():
             errors.append(f"{url}: {e}")
             continue
 
-        USER_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        with open(USER_MIRRORS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
+        try:
+            USER_CONFIG_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+            payload = json.dumps(data, indent=4, ensure_ascii=False) + "\n"
+            atomic_write_text(USER_MIRRORS_FILE, payload, mode=0o600)
+        except OSError as exc:
+            return False, f"保存镜像源列表失败: {exc}"
         return True, f"成功从 {url} 更新镜像源"
 
     detail = "\n".join(f"  - {e}" for e in errors)

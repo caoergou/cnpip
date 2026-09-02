@@ -33,6 +33,7 @@ cnpip tuna          # equivalent to cnpip set tuna
 ## Features
 
 - **One command, fastest mirror**: Concurrent latency tests across all mirrors — automatically picks and applies the winner
+- **Real package-index probes**: Repeated GET requests to the PEP 503 `pip` project page, using median response latency instead of a single root-path HEAD request
 - **Interactive multi-tool setup**: `cnpip set` scans installed package managers and configures the ones you pick in one go (`-y` to skip)
 - **Native uv support**: Auto-writes `uv.toml` in uvx environments; use `--uv` for explicit control at any time
 - **Covers the whole packaging ecosystem**: Configure pdm, poetry, and conda mirrors with `--pdm`, `--poetry`, `--conda`
@@ -65,7 +66,7 @@ cnpip list
 Example output:
 
 ```
-镜像名称      耗时/状态            地址
+镜像名称      响应延迟/状态        地址
 -----------------------------------------------------------------------------------
 ustc         135.71 ms           https://pypi.mirrors.ustc.edu.cn/simple
 aliyun       300.77 ms           https://mirrors.aliyun.com/pypi/simple
@@ -94,7 +95,7 @@ When run in a terminal, `cnpip set` first scans installed package managers and l
 请选择要配置的工具（编号，空格分隔多个；a=全部；回车=1 即 pip）:
 ```
 
-Non-TTY environments (scripts/CI), explicit tool flags like `--uv`, and `-y` all skip the prompt and behave exactly like previous versions.
+Non-TTY environments (scripts/CI), explicit tool flags like `--uv`, and `-y` skip the prompt; if a tool fails during interactive batch setup, cnpip rolls back the tools already configured in that batch.
 
 **Default scope (auto-detected):**
 
@@ -113,18 +114,18 @@ cnpip set --venv    # Current virtualenv config
 cnpip set --uv      # Write to uv config (~/.config/uv/uv.toml)
 ```
 
-### 3. Unset mirror
+### 3. Restore cnpip configuration
 
 ```bash
-cnpip unset         # Remove pip mirror config
-cnpip unset --uv    # Remove uv mirror config
+cnpip unset         # Restore the pip config from before cnpip changed it
+cnpip unset --uv    # Restore the uv config from before cnpip changed it
 ```
 
 Scope flags work the same as `set`:
 
 ```bash
-cnpip unset --user
-cnpip unset --global
+cnpip unset --user    # Restore the user-level config
+cnpip unset --global  # Restore the system-level config
 ```
 
 ### 4. Diagnostics
@@ -136,7 +137,7 @@ cnpip info
 Example output:
 
 ```
-cnpip 版本: v1.3.1
+cnpip 版本: v1.6.0
 Python 路径: /usr/bin/python3
 操作系统: Linux 5.15.0
 Pip 版本: pip 24.0 from ...
@@ -161,7 +162,7 @@ cnpip set --pdm            # Benchmark and configure pdm (user-level pdm config)
 cnpip set tuna --poetry    # Point the current poetry project at TUNA (writes pyproject.toml)
 cnpip set --conda          # Benchmark and configure conda (writes ~/.condarc)
 
-cnpip unset --pdm          # Restore each tool's default source
+cnpip unset --pdm          # Restore the config from before cnpip changed it
 cnpip unset --poetry
 cnpip unset --conda
 ```
@@ -174,7 +175,7 @@ Notes:
 
 ### 6. Sync mirror list
 
-Fetch the latest mirror list (tries jsDelivr CDN first, then GitHub — no proxy needed in mainland China):
+Fetch the latest mirror list (tries jsDelivr CDN first, then GitHub — no proxy needed in mainland China). Remote entries may add mirrors, but must use valid names, HTTPS, no credentials/ports/query parameters, and a PEP 503 path:
 
 ```bash
 cnpip sync
@@ -185,19 +186,28 @@ cnpip sync
 `cnpip` automatically selects the right config file based on your environment. Run `cnpip info` to see the actual paths in use.
 
 - **pip config**: Only modifies `global.index-url`; `global.trusted-host` is written only for http mirrors (trusted-host disables TLS verification, so https mirrors must not set it)
-- **uv config**: Writes an `[[index]]` block to `uv.toml`; leaves all other uv settings untouched
+- **uv config**: Writes a named `[[index]]` block (`name = "cnpip"`) to `uv.toml`; leaves other indexes untouched
 - **pdm config**: Written via `pdm config` to the user-level `config.toml`
 - **poetry config**: Written via `poetry source add` to the current project's `pyproject.toml`
-- **conda config**: Written via `conda config` to `~/.condarc`
+- **conda config**: Written via `conda config --prepend/--set` to `~/.condarc`, preserving existing default channels
+
+## Safety and recovery
+
+- Before changing a target, cnpip records the complete original file and stores the post-change fingerprint in `~/.cnpip/state.json`. On Linux/macOS the state directory and file use mode 700/600; on Windows privacy is provided by the default ACL of the user's profile directory.
+- `unset` only restores configuration managed by the corresponding cnpip operation. If another program changed the file or value afterwards, cnpip refuses to overwrite it and exits nonzero.
+- File writes use a same-directory temporary file and atomic replacement. Interactive multi-tool setup rolls back tools that succeeded when a later tool fails.
+- `cnpip sync` validates the remote manifest before saving it. PyPI probes issue three GET requests to `simple/pip/`; conda probes use `pkgs/main/noarch/repodata.json`. Both use the median and require at least two successful responses.
 
 ## FAQ
 
-### 1. How do I restore the default mirror?
+### 1. How do I restore the config from before cnpip?
 
 ```bash
-cnpip unset        # Restore pip default
-cnpip unset --uv   # Restore uv default
+cnpip unset        # Restore the pip config from before cnpip
+cnpip unset --uv   # Restore the uv config from before cnpip
 ```
+
+If the config changed after cnpip applied it, cnpip reports drift and refuses to overwrite the file. Review the difference manually first.
 
 ### 2. Will the config persist when using uvx?
 

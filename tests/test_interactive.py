@@ -70,12 +70,18 @@ class TestApplyMirrorToTool:
     def test_conda_rebenchmarks_when_mirror_has_no_conda(self, monkeypatch):
         # aliyun 无 conda 镜像：应单独测速并回落到可用的 conda 镜像
         received = {}
-        monkeypatch.setattr(module, 'choose_fastest_mirror', lambda mirrors: 'ustc')
+        probe = {}
+        monkeypatch.setattr(
+            module,
+            'choose_fastest_mirror',
+            lambda mirrors, probe_path=None: probe.update(path=probe_path) or 'ustc',
+        )
         monkeypatch.setattr(module, 'set_conda_mirror',
                             lambda url: received.update(url=url) or (True, 'ok'))
         ok = apply_mirror_to_tool('conda', 'aliyun', module.MIRRORS['aliyun'], None)
         assert ok
         assert received['url'] == module.CONDA_MIRRORS['ustc']
+        assert probe['path'] == module.CONDA_MIRROR_PROBE_PATH
 
     def test_pdm_routes_to_pdm(self, monkeypatch):
         received = {}
@@ -140,6 +146,58 @@ class TestRunInteractiveSet:
             run_interactive_set(self._make_args(mirror='tuna'))
         assert exc_info.value.code != 0
 
+    def test_failed_batch_rolls_back_completed_tools(self, monkeypatch, capsys):
+        monkeypatch.setattr(module, 'scan_available_tools',
+                            lambda: [('uv', ''), ('pdm', '')])
+        monkeypatch.setattr(module, 'detect_environment', lambda: 'system')
+        monkeypatch.setattr('builtins.input', lambda prompt: '1 2')
+
+        applied = []
+        monkeypatch.setattr(
+            module,
+            'apply_mirror_to_tool',
+            lambda tool, name, url, args: applied.append(tool) or tool == 'uv',
+        )
+        rolled_back = []
+        monkeypatch.setattr(
+            module,
+            'rollback_mirror_from_tool',
+            lambda tool, args: rolled_back.append(tool) or (True, 'ok'),
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            run_interactive_set(self._make_args(mirror='tuna'))
+
+        assert exc_info.value.code != 0
+        assert applied == ['uv', 'pdm']
+        assert rolled_back == ['uv']
+
+    def test_adapter_exception_also_rolls_back_completed_tools(self, monkeypatch, capsys):
+        monkeypatch.setattr(module, 'scan_available_tools',
+                            lambda: [('uv', ''), ('pdm', '')])
+        monkeypatch.setattr(module, 'detect_environment', lambda: 'system')
+        monkeypatch.setattr('builtins.input', lambda prompt: '1 2')
+
+        def apply(tool, name, url, args):
+            if tool == 'uv':
+                return True
+            raise RuntimeError('adapter crashed')
+
+        monkeypatch.setattr(module, 'apply_mirror_to_tool', apply)
+        rolled_back = []
+        monkeypatch.setattr(
+            module,
+            'rollback_mirror_from_tool',
+            lambda tool, args: rolled_back.append(tool) or (True, 'ok'),
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            run_interactive_set(self._make_args(mirror='tuna'))
+
+        assert exc_info.value.code != 0
+        assert rolled_back == ['uv']
+        assert '未处理异常' in capsys.readouterr().out
+
 
 class TestCliTrigger:
     def test_tty_without_flags_enters_interactive(self, monkeypatch):
@@ -165,7 +223,7 @@ class TestCliTrigger:
         monkeypatch.setattr(module, 'run_interactive_set',
                             lambda args: pytest.fail('should not enter interactive mode'))
         # 屏蔽真实 pip 配置写入
-        monkeypatch.setattr(module, 'update_pip_config', lambda url, scope: None)
+        monkeypatch.setattr(module, 'update_pip_config', lambda url, scope: True)
 
         main()
 
@@ -185,6 +243,6 @@ class TestCliTrigger:
         monkeypatch.setattr(sys, 'argv', ['cnpip', 'set', 'tuna'])
         monkeypatch.setattr(module, 'run_interactive_set',
                             lambda args: pytest.fail('should not enter interactive mode'))
-        monkeypatch.setattr(module, 'update_pip_config', lambda url, scope: None)
+        monkeypatch.setattr(module, 'update_pip_config', lambda url, scope: True)
 
         main()

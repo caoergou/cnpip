@@ -2,6 +2,14 @@ import sys
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def isolated_cnpip_state(tmp_path, monkeypatch):
+    """所有测试使用隔离的配置所有权状态，绝不写入真实主目录。"""
+    import cnpip.state as state_module
+
+    monkeypatch.setattr(state_module, 'STATE_FILE', tmp_path / '.cnpip' / 'state.json')
+
+
 @pytest.fixture
 def clean_env(monkeypatch):
     """清除影响环境检测的环境变量，并将 sys.prefix 重置为 sys.base_prefix（模拟系统环境）。"""
