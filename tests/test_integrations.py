@@ -29,9 +29,12 @@ def fake_run_factory(calls, returncode=0, stdout='', stderr=''):
 
 
 @pytest.fixture
-def tool_installed(monkeypatch):
+def tool_installed(monkeypatch, tmp_path):
     """模拟所有外部工具均已安装。"""
     monkeypatch.setattr(module.shutil, 'which', lambda name: f'/usr/bin/{name}')
+    conda_path = tmp_path / '.condarc'
+    conda_path.write_text('channels:\n  - defaults\n', encoding='utf-8')
+    monkeypatch.setattr(module, 'get_conda_config_path', lambda: conda_path)
 
 
 @pytest.fixture
@@ -44,6 +47,8 @@ class TestPdm:
     def test_set_runs_pdm_config(self, tool_installed, monkeypatch):
         calls = []
         monkeypatch.setattr(module, '_run', fake_run_factory(calls))
+        values = iter([None, MIRROR_URL])
+        monkeypatch.setattr(module, 'get_pdm_mirror', lambda: next(values))
         success, msg = set_pdm_mirror(MIRROR_URL)
         assert success
         assert calls == [['/usr/bin/pdm', 'config', 'pypi.url', MIRROR_URL]]
@@ -56,6 +61,7 @@ class TestPdm:
 
     def test_set_reports_cli_error(self, tool_installed, monkeypatch):
         monkeypatch.setattr(module, '_run', fake_run_factory([], returncode=1, stderr='boom'))
+        monkeypatch.setattr(module, 'get_pdm_mirror', lambda: None)
         success, msg = set_pdm_mirror(MIRROR_URL)
         assert not success
         assert 'boom' in msg
@@ -63,15 +69,19 @@ class TestPdm:
     def test_unset_deletes_config_key(self, tool_installed, monkeypatch):
         calls = []
         monkeypatch.setattr(module, '_run', fake_run_factory(calls))
+        module.record_managed_value("pdm:user", None, MIRROR_URL)
+        monkeypatch.setattr(module, 'get_pdm_mirror', lambda: MIRROR_URL)
         success, msg = unset_pdm_mirror()
         assert success
         assert calls == [['/usr/bin/pdm', 'config', '--delete', 'pypi.url']]
 
     def test_unset_graceful_when_not_set(self, tool_installed, monkeypatch):
-        # pdm 对未设置的 key 执行 --delete 会报错，应视为无需操作
-        monkeypatch.setattr(module, '_run', fake_run_factory([], returncode=1))
+        calls = []
+        monkeypatch.setattr(module, '_run', fake_run_factory(calls, returncode=1))
+        monkeypatch.setattr(module, 'get_pdm_mirror', lambda: None)
         success, msg = unset_pdm_mirror()
         assert success
+        assert calls == []
 
 
 class TestPoetry:
@@ -83,9 +93,18 @@ class TestPoetry:
 
     def test_set_adds_primary_source(self, tool_installed, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
-        (tmp_path / 'pyproject.toml').write_text('[tool.poetry]\n', encoding='utf-8')
+        config = tmp_path / 'pyproject.toml'
+        config.write_text('[tool.poetry]\n', encoding='utf-8')
         calls = []
-        monkeypatch.setattr(module, '_run', fake_run_factory(calls))
+        def fake_run(cmd):
+            calls.append(cmd)
+            config.write_text(
+                '[tool.poetry]\n[[tool.poetry.source]]\n'
+                f'name = "{POETRY_SOURCE_NAME}"\nurl = "{MIRROR_URL}"\n',
+                encoding='utf-8',
+            )
+            return SimpleNamespace(returncode=0, stdout='', stderr='')
+        monkeypatch.setattr(module, '_run', fake_run)
         success, msg = set_poetry_mirror(MIRROR_URL)
         assert success
         assert calls == [['/usr/bin/poetry', 'source', 'add', '--priority=primary',
@@ -95,14 +114,26 @@ class TestPoetry:
         success, msg = set_poetry_mirror(MIRROR_URL)
         assert not success
 
-    def test_unset_removes_named_source(self, tool_installed, tmp_path, monkeypatch):
+    def test_unset_restores_original_project_file(self, tool_installed, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
-        (tmp_path / 'pyproject.toml').write_text('[tool.poetry]\n', encoding='utf-8')
+        config = tmp_path / 'pyproject.toml'
+        original = b'# comment\n[tool.poetry]\n'
+        config.write_bytes(original)
         calls = []
-        monkeypatch.setattr(module, '_run', fake_run_factory(calls))
+        def fake_run(cmd):
+            calls.append(cmd)
+            config.write_text(
+                '[tool.poetry]\n[[tool.poetry.source]]\n'
+                f'name = "{POETRY_SOURCE_NAME}"\nurl = "{MIRROR_URL}"\n',
+                encoding='utf-8',
+            )
+            return SimpleNamespace(returncode=0, stdout='', stderr='')
+        monkeypatch.setattr(module, '_run', fake_run)
+        success, msg = set_poetry_mirror(MIRROR_URL)
+        assert success, msg
         success, msg = unset_poetry_mirror()
         assert success
-        assert calls == [['/usr/bin/poetry', 'source', 'remove', POETRY_SOURCE_NAME]]
+        assert config.read_bytes() == original
 
     def test_unset_graceful_without_pyproject(self, tool_installed, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
@@ -131,25 +162,40 @@ class TestConda:
         for cmd in cmds:
             assert not any('anaconda//' in part for part in cmd)
 
-    def test_set_clears_old_default_channels_first(self, tool_installed, monkeypatch):
+    def test_set_does_not_remove_existing_default_channels(self, tool_installed, monkeypatch):
         calls = []
-        monkeypatch.setattr(module, '_run', fake_run_factory(calls))
+        config = module.get_conda_config_path()
+        def fake_run(cmd):
+            calls.append(cmd)
+            config.write_text(f'default_channels:\n  - {CONDA_MIRRORS["tuna"]}/pkgs/main\n', encoding='utf-8')
+            return SimpleNamespace(returncode=0, stdout='', stderr='')
+        monkeypatch.setattr(module, '_run', fake_run)
         success, msg = set_conda_mirror(CONDA_MIRRORS['tuna'])
         assert success
-        assert calls[0] == ['/usr/bin/conda', 'config', '--remove-key', 'default_channels']
+        assert all('--remove-key' not in cmd for cmd in calls)
+        assert calls[1][2:4] == ['--prepend', 'default_channels']
 
     def test_set_fails_when_conda_missing(self, tool_missing):
         success, msg = set_conda_mirror(CONDA_MIRRORS['tuna'])
         assert not success
 
-    def test_unset_removes_keys(self, tool_installed, monkeypatch):
+    def test_unset_restores_original_conda_file(self, tool_installed, monkeypatch):
+        config = module.get_conda_config_path()
+        original = config.read_bytes()
         calls = []
-        monkeypatch.setattr(module, '_run', fake_run_factory(calls))
+        def fake_run(cmd):
+            calls.append(cmd)
+            config.write_text(
+                f'default_channels:\n  - {CONDA_MIRRORS["tuna"]}/pkgs/main\n',
+                encoding='utf-8',
+            )
+            return SimpleNamespace(returncode=0, stdout='', stderr='')
+        monkeypatch.setattr(module, '_run', fake_run)
+        success, msg = set_conda_mirror(CONDA_MIRRORS['tuna'])
+        assert success, msg
         success, msg = unset_conda_mirror()
         assert success
-        removed_keys = [cmd[-1] for cmd in calls]
-        assert 'default_channels' in removed_keys
-        assert 'custom_channels' in removed_keys
+        assert config.read_bytes() == original
 
 
 class TestCliIntegration:

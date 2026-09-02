@@ -140,6 +140,32 @@ class TestRunInteractiveSet:
             run_interactive_set(self._make_args(mirror='tuna'))
         assert exc_info.value.code != 0
 
+    def test_failed_batch_rolls_back_completed_tools(self, monkeypatch, capsys):
+        monkeypatch.setattr(module, 'scan_available_tools',
+                            lambda: [('uv', ''), ('pdm', '')])
+        monkeypatch.setattr(module, 'detect_environment', lambda: 'system')
+        monkeypatch.setattr('builtins.input', lambda prompt: '1 2')
+
+        applied = []
+        monkeypatch.setattr(
+            module,
+            'apply_mirror_to_tool',
+            lambda tool, name, url, args: applied.append(tool) or tool == 'uv',
+        )
+        rolled_back = []
+        monkeypatch.setattr(
+            module,
+            'rollback_mirror_from_tool',
+            lambda tool, args: rolled_back.append(tool) or (True, 'ok'),
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            run_interactive_set(self._make_args(mirror='tuna'))
+
+        assert exc_info.value.code != 0
+        assert applied == ['uv', 'pdm']
+        assert rolled_back == ['uv']
+
 
 class TestCliTrigger:
     def test_tty_without_flags_enters_interactive(self, monkeypatch):
@@ -165,7 +191,7 @@ class TestCliTrigger:
         monkeypatch.setattr(module, 'run_interactive_set',
                             lambda args: pytest.fail('should not enter interactive mode'))
         # 屏蔽真实 pip 配置写入
-        monkeypatch.setattr(module, 'update_pip_config', lambda url, scope: None)
+        monkeypatch.setattr(module, 'update_pip_config', lambda url, scope: True)
 
         main()
 
@@ -185,6 +211,6 @@ class TestCliTrigger:
         monkeypatch.setattr(sys, 'argv', ['cnpip', 'set', 'tuna'])
         monkeypatch.setattr(module, 'run_interactive_set',
                             lambda args: pytest.fail('should not enter interactive mode'))
-        monkeypatch.setattr(module, 'update_pip_config', lambda url, scope: None)
+        monkeypatch.setattr(module, 'update_pip_config', lambda url, scope: True)
 
         main()

@@ -13,6 +13,7 @@ from cnpip.cnpip import main
 from cnpip.mirrors import MIRRORS
 
 MIRROR_URL = MIRRORS['tuna']
+REAL_MEASURE_MIRROR_SPEED = module.measure_mirror_speed
 
 
 @pytest.fixture(autouse=True)
@@ -133,9 +134,54 @@ class TestDefaultCommand:
         monkeypatch.setattr(sys, 'argv', ['cnpip', 'tuna'])
         monkeypatch.setattr(sys.stdin, 'isatty', lambda: False)
         updated = []
-        monkeypatch.setattr(module, 'update_pip_config', lambda url, scope: updated.append(url))
+        monkeypatch.setattr(module, 'update_pip_config', lambda url, scope: updated.append(url) or True)
         main()
         assert updated and 'tuna' in updated[0]
+
+    def test_mirror_name_without_command_returns_nonzero_on_failure(self, monkeypatch):
+        monkeypatch.setattr(sys, 'argv', ['cnpip', 'tuna'])
+        monkeypatch.setattr(sys.stdin, 'isatty', lambda: False)
+        monkeypatch.setattr(module, 'update_pip_config', lambda url, scope: False)
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code != 0
+
+
+class TestMirrorProbe:
+    def test_probes_pep503_project_with_repeated_get(self, monkeypatch):
+        calls = []
+
+        class FakeResponse:
+            status = 200
+
+            def read(self, size):
+                assert size == 64 * 1024
+                return b'<a href="pip/">pip</a>'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        monkeypatch.setattr(
+            module.urllib.request,
+            'urlopen',
+            lambda request, timeout: calls.append((request, timeout)) or FakeResponse(),
+        )
+        monkeypatch.setattr(module, 'measure_mirror_speed', REAL_MEASURE_MIRROR_SPEED)
+        clock = iter([0.0, 0.10, 1.0, 1.30, 2.0, 2.10])
+        monkeypatch.setattr(module.time, 'monotonic', lambda: next(clock))
+
+        name, speed, url, error = module.measure_mirror_speed(
+            'tuna', 'https://pypi.tuna.tsinghua.edu.cn/simple'
+        )
+
+        assert (name, url, error) == ('tuna', 'https://pypi.tuna.tsinghua.edu.cn/simple', None)
+        assert speed == 100.0
+        assert len(calls) == module.MIRROR_PROBE_COUNT
+        assert all(request.full_url.endswith('/simple/pip/') for request, _ in calls)
+        assert all(request.get_method() == 'GET' for request, _ in calls)
 
     def test_flag_without_command_defaults_to_set(self, monkeypatch, fake_uv_config_path):
         monkeypatch.setattr(sys, 'argv', ['cnpip', 'tuna', '--uv'])
@@ -213,3 +259,22 @@ class TestListCommand:
         captured = capsys.readouterr()
         assert 'tuna' in captured.out
         assert 'ustc' in captured.out
+
+    def test_list_returns_nonzero_when_all_probes_fail(self, monkeypatch):
+        monkeypatch.setattr(
+            module,
+            'measure_mirror_speed',
+            lambda name, url: (name, float('inf'), url, 'offline'),
+        )
+        monkeypatch.setattr(sys, 'argv', ['cnpip', 'list'])
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code != 0
+
+
+class TestDiagnosticRedaction:
+    def test_redact_url_hides_credentials(self):
+        redacted = module.redact_url('https://alice:secret@example.com/simple')
+        assert 'alice' not in redacted
+        assert 'secret' not in redacted
+        assert 'example.com' in redacted

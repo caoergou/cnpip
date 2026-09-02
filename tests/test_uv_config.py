@@ -109,25 +109,38 @@ class TestUnsetUvConfig:
         success, msg = unset_uv_config()
         assert success
 
-    def test_preserves_other_content(self, fake_uv_config_path):
+    def test_unset_does_not_touch_unmanaged_content(self, fake_uv_config_path):
         fake_uv_config_path.parent.mkdir(parents=True, exist_ok=True)
         fake_uv_config_path.write_text(
             '[global]\nkey = "val"\n\n[[index]]\nurl = "https://example.com"\ndefault = true\n',
             encoding='utf-8'
         )
-        unset_uv_config()
+        before = fake_uv_config_path.read_bytes()
+        success, msg = unset_uv_config()
+        assert success
         content = fake_uv_config_path.read_text(encoding='utf-8')
-        assert '[[index]]' not in content
-        assert 'key = "val"' in content
+        assert fake_uv_config_path.read_bytes() == before
+        assert '没有管理' in msg
 
-    def test_removes_multiple_index_blocks(self, fake_uv_config_path):
+    def test_set_unset_restores_multiple_index_blocks_exactly(self, fake_uv_config_path):
         fake_uv_config_path.parent.mkdir(parents=True, exist_ok=True)
         fake_uv_config_path.write_text(
             '[[index]]\nurl = "https://a.com"\ndefault = true\n\n'
             '[[index]]\nurl = "https://b.com"\n',
             encoding='utf-8'
         )
+        before = fake_uv_config_path.read_bytes()
+        success, msg = update_uv_config(MIRROR_URL)
+        assert success, msg
         success, msg = unset_uv_config()
         assert success
-        content = fake_uv_config_path.read_text(encoding='utf-8')
-        assert '[[index]]' not in content
+        assert fake_uv_config_path.read_bytes() == before
+
+    def test_unset_refuses_to_overwrite_drift(self, fake_uv_config_path):
+        success, msg = update_uv_config(MIRROR_URL)
+        assert success, msg
+        fake_uv_config_path.write_text('用户的新配置\n', encoding='utf-8')
+        success, msg = unset_uv_config()
+        assert not success
+        assert '拒绝覆盖' in msg
+        assert fake_uv_config_path.read_text(encoding='utf-8') == '用户的新配置\n'

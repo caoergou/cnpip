@@ -4,9 +4,9 @@ import json
 import pytest
 
 import cnpip.mirrors as mirrors_module
-from cnpip.mirrors import update_mirrors_from_remote, REMOTE_MIRRORS_URLS
+from cnpip.mirrors import DEFAULT_MIRRORS, update_mirrors_from_remote, REMOTE_MIRRORS_URLS
 
-FAKE_MIRRORS = {"tuna": "https://pypi.tuna.tsinghua.edu.cn/simple"}
+FAKE_MIRRORS = DEFAULT_MIRRORS.copy()
 
 
 @pytest.fixture
@@ -69,7 +69,7 @@ def test_invalid_json_falls_through(fake_user_config, monkeypatch):
         class FakeResponse:
             status = 200
 
-            def read(self):
+            def read(self, size=-1):
                 # 第一个地址返回非法内容（list），之后返回合法 dict
                 if len(calls) == 1:
                     return json.dumps([1, 2, 3]).encode('utf-8')
@@ -87,3 +87,22 @@ def test_invalid_json_falls_through(fake_user_config, monkeypatch):
     success, msg = update_mirrors_from_remote()
     assert success
     assert len(calls) == 2
+
+
+@pytest.mark.parametrize('bad_url', [
+    'http://pypi.tuna.tsinghua.edu.cn/simple',
+    'https://pypi.tuna.tsinghua.edu.cn:443/simple',
+    'https://pypi.tuna.tsinghua.edu.cn/simple?redirect=1',
+])
+def test_remote_manifest_rejects_unsafe_url(bad_url):
+    data = DEFAULT_MIRRORS.copy()
+    data['tuna'] = bad_url
+    with pytest.raises(ValueError):
+        mirrors_module._validate_mirrors(data, strict_remote=True)
+
+
+def test_remote_manifest_allows_new_https_mirror():
+    data = DEFAULT_MIRRORS.copy()
+    data['new-mirror'] = 'https://mirror.example.org/pypi/simple'
+    validated = mirrors_module._validate_mirrors(data, strict_remote=True)
+    assert validated['new-mirror'] == data['new-mirror']

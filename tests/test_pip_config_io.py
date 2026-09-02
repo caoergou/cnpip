@@ -124,7 +124,7 @@ class TestUnsetPipConfigDirectly:
         success, msg = unset_pip_config_directly('user')
         assert success
 
-    def test_preserves_other_options_after_unset(self, fake_pip_config_path):
+    def test_unset_does_not_touch_unmanaged_options(self, fake_pip_config_path):
         # 写入带镜像源的配置
         config_file = fake_pip_config_path / 'pip.conf'
         fake_pip_config_path.mkdir(parents=True, exist_ok=True)
@@ -137,8 +137,43 @@ class TestUnsetPipConfigDirectly:
         with open(config_file, 'w', encoding='utf-8') as f:
             existing_cfg.write(f)
 
-        unset_pip_config_directly('user')
+        before = config_file.read_bytes()
+        success, msg = unset_pip_config_directly('user')
+        assert success
         cfg = read_config(config_file)
-        assert not cfg.has_option('global', 'index-url')
+        assert config_file.read_bytes() == before
+        assert cfg.has_option('global', 'index-url')
         assert cfg.has_option('global', 'timeout')
         assert cfg.get('global', 'timeout') == '60'
+
+    def test_set_unset_restores_original_bytes(self, fake_pip_config_path):
+        config_file = fake_pip_config_path / 'pip.conf'
+        fake_pip_config_path.mkdir(parents=True, exist_ok=True)
+        original = b'# user comment\n[global]\ntimeout = 60\n'
+        config_file.write_bytes(original)
+        success, msg = write_pip_config_directly(MIRROR_URL, 'user')
+        assert success, msg
+        success, msg = unset_pip_config_directly('user')
+        assert success, msg
+        assert config_file.read_bytes() == original
+
+    def test_unset_refuses_to_overwrite_drift(self, fake_pip_config_path):
+        success, msg = write_pip_config_directly(MIRROR_URL, 'user')
+        assert success, msg
+        config_file = fake_pip_config_path / 'pip.conf'
+        config_file.write_text('[global]\nindex-url = https://private.example/simple\n', encoding='utf-8')
+        success, msg = unset_pip_config_directly('user')
+        assert not success
+        assert '拒绝覆盖' in msg
+
+    def test_invalid_existing_config_returns_failure(self, fake_pip_config_path):
+        config_file = fake_pip_config_path / 'pip.conf'
+        fake_pip_config_path.mkdir(parents=True, exist_ok=True)
+        config_file.write_text('[global\ninvalid', encoding='utf-8')
+        before = config_file.read_bytes()
+
+        success, msg = write_pip_config_directly(MIRROR_URL, 'user')
+
+        assert not success
+        assert '写入失败' in msg
+        assert config_file.read_bytes() == before
