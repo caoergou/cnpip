@@ -175,6 +175,31 @@ class TestHelpText:
         assert 'options:' not in captured.out.lower().split('选项')[0]
 
 
+class TestSyncCommand:
+    """update 重命名为 sync，update 作为别名保留。"""
+
+    def test_sync_calls_update_mirrors(self, monkeypatch, capsys):
+        monkeypatch.setattr(sys, 'argv', ['cnpip', 'sync'])
+        monkeypatch.setattr(module, 'update_mirrors_from_remote', lambda: (True, 'ok'))
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 0
+
+    def test_update_alias_still_works(self, monkeypatch, capsys):
+        monkeypatch.setattr(sys, 'argv', ['cnpip', 'update'])
+        monkeypatch.setattr(module, 'update_mirrors_from_remote', lambda: (True, 'ok'))
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 0
+
+    def test_help_shows_sync_not_update(self, monkeypatch, capsys):
+        monkeypatch.setattr(sys, 'argv', ['cnpip', '--help'])
+        with pytest.raises(SystemExit):
+            main()
+        captured = capsys.readouterr()
+        assert 'sync' in captured.out
+
+
 class TestListCommand:
     def test_list_prints_mirror_header(self, monkeypatch, capsys):
         monkeypatch.setattr(sys, 'argv', ['cnpip', 'list'])

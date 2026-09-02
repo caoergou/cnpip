@@ -851,7 +851,7 @@ def run_interactive_set(args):
     sys.exit(0 if all_ok else 1)
 
 
-_COMMANDS = frozenset({"list", "set", "unset", "info", "update"})
+_COMMANDS = frozenset({"list", "set", "unset", "info", "sync", "update"})
 
 _HELP_TEXT = """\
 cnpip - 快速切换 pip 镜像源
@@ -862,7 +862,7 @@ cnpip - 快速切换 pip 镜像源
   cnpip list              测速所有镜像
   cnpip unset             恢复默认源
   cnpip info              显示环境和配置信息
-  cnpip update            更新镜像源列表
+  cnpip sync              更新镜像源列表
 
 选项:
   --uv                    配置 uv
@@ -911,6 +911,9 @@ def main():
     parser.add_argument("-y", "--yes", action="store_true")
 
     args = parser.parse_args()
+
+    if args.command == 'update':
+        args.command = 'sync'
 
     if args.command == "list":
         list_mirrors()
@@ -1017,7 +1020,7 @@ def main():
             sys.exit(0)
     elif args.command == "info":
         show_info()
-    elif args.command == "update":
+    elif args.command == "sync":
         print("正在从远程获取最新的镜像源列表...")
         success, msg = update_mirrors_from_remote()
         print(msg)
