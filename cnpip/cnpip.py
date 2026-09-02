@@ -82,6 +82,11 @@ def print_mirror_results(results):
             print(f"{name:<{name_width}}\t{error_msg:<{time_width}}\t{url:<{url_width}}")
 
 
+def needs_trusted_host(mirror_url):
+    """trusted-host 会跳过 TLS 校验，只有 http 镜像才需要设置。"""
+    return urlparse(mirror_url).scheme == 'http'
+
+
 def is_pip_installed():
     """检查 pip 是否安装"""
     try:
@@ -436,14 +441,17 @@ def write_pip_config_directly(mirror_url, scope):
     if config_path is None:
         return False, f"不支持的作用域: {scope}"
 
-    host = urlparse(mirror_url).netloc
     config = configparser.ConfigParser()
     if config_path.exists():
         config.read(config_path, encoding='utf-8')
     if not config.has_section('global'):
         config.add_section('global')
     config.set('global', 'index-url', mirror_url)
-    config.set('global', 'trusted-host', host)
+    # trusted-host 会跳过 TLS 校验，仅对 http 镜像有必要；https 镜像应移除残留配置
+    if needs_trusted_host(mirror_url):
+        config.set('global', 'trusted-host', urlparse(mirror_url).netloc)
+    elif config.has_option('global', 'trusted-host'):
+        config.remove_option('global', 'trusted-host')
 
     try:
         config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -494,6 +502,7 @@ def unset_pip_config_directly(scope):
 def update_pip_config(mirror_url, scope_args):
     # 提取主机名
     host = urlparse(mirror_url).netloc
+    set_trusted = needs_trusted_host(mirror_url)
     scope_str = " ".join(scope_args) if scope_args else "auto"
     scope_desc = get_scope_description(scope_args)
 
@@ -518,7 +527,8 @@ def update_pip_config(mirror_url, scope_args):
             else:
                 print(f"请复制以下命令在终端运行以生效配置 ({scope_desc}):")
                 print(f"pip config set {scope_str} global.index-url {mirror_url}")
-                print(f"pip config set {scope_str} global.trusted-host {host}")
+                if set_trusted:
+                    print(f"pip config set {scope_str} global.trusted-host {host}")
         return
 
     print(f"\n正在修改 [{scope_desc}] ...", flush=True)
@@ -532,7 +542,12 @@ def update_pip_config(mirror_url, scope_args):
         # 用户的需求是清晰的输出，pip config set 会输出 "Writing to ..."
         # 我们保留它，因为它告诉用户文件位置
         subprocess.run([sys.executable, '-m', 'pip', 'config', 'set'] + scope_args + ['global.index-url', mirror_url], check=True)
-        subprocess.run([sys.executable, '-m', 'pip', 'config', 'set'] + scope_args + ['global.trusted-host', host], check=True)
+        if set_trusted:
+            subprocess.run([sys.executable, '-m', 'pip', 'config', 'set'] + scope_args + ['global.trusted-host', host], check=True)
+        else:
+            # https 镜像无需 trusted-host，清理可能残留的旧配置（不存在时 pip 会报错，忽略即可）
+            subprocess.run([sys.executable, '-m', 'pip', 'config', 'unset'] + scope_args + ['global.trusted-host'],
+                           check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         # 获取修改后配置
         new_index, new_host = get_pip_config()
@@ -545,7 +560,8 @@ def update_pip_config(mirror_url, scope_args):
             print(get_global_scope_hint())
         print(f"\n请尝试手动运行以下命令:")
         print(f"pip config set {scope_str} global.index-url {mirror_url}")
-        print(f"pip config set {scope_str} global.trusted-host {host}")
+        if set_trusted:
+            print(f"pip config set {scope_str} global.trusted-host {host}")
 
 
 def unset_pip_mirror(scope_args) -> None:
