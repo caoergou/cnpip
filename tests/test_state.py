@@ -1,4 +1,5 @@
 """测试配置所有权状态的精确恢复与安全写入。"""
+import os
 import stat
 
 import cnpip.state as state_module
@@ -17,8 +18,13 @@ def test_state_file_is_private(tmp_path):
     assert success, error
 
     state_path = state_module.STATE_FILE
-    assert stat.S_IMODE(state_path.stat().st_mode) == 0o600
-    assert stat.S_IMODE(state_path.parent.stat().st_mode) == 0o700
+    if os.name == 'nt':
+        # Windows uses ACLs for privacy; st_mode does not expose Unix 700/600.
+        assert state_path.exists()
+        assert state_path.parent.exists()
+    else:
+        assert stat.S_IMODE(state_path.stat().st_mode) == 0o600
+        assert stat.S_IMODE(state_path.parent.stat().st_mode) == 0o700
 
 
 def test_restore_preserves_an_original_empty_file(tmp_path):

@@ -193,7 +193,7 @@ cnpip sync
 
 ## Safety and recovery
 
-- Before changing a target, cnpip records the complete original file and stores the post-change fingerprint in `~/.cnpip/state.json`. The state directory is user-private and the state file is written with mode 600.
+- Before changing a target, cnpip records the complete original file and stores the post-change fingerprint in `~/.cnpip/state.json`. On Linux/macOS the state directory and file use mode 700/600; on Windows privacy is provided by the default ACL of the user's profile directory.
 - `unset` only restores configuration managed by the corresponding cnpip operation. If another program changed the file or value afterwards, cnpip refuses to overwrite it and exits nonzero.
 - File writes use a same-directory temporary file and atomic replacement. Interactive multi-tool setup rolls back tools that succeeded when a later tool fails.
 - `cnpip sync` validates the remote manifest before saving it. PyPI probes issue three GET requests to `simple/pip/`; conda probes use `pkgs/main/noarch/repodata.json`. Both use the median and require at least two successful responses.
