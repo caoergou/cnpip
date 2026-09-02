@@ -172,16 +172,23 @@ def unset_poetry_mirror():
 
 # === conda ===
 
-def conda_set_commands(conda_bin, base_url):
+def conda_set_commands(conda_bin, base_url, config_path=None):
     """生成配置 conda 镜像的命令序列（default_channels + conda-forge/pytorch 社区源）。"""
     base = base_url.rstrip('/')
+    config_args = (['--file', str(config_path)] if config_path is not None else [])
     return [
-        [conda_bin, 'config', '--set', 'show_channel_urls', 'yes'],
-        [conda_bin, 'config', '--prepend', 'default_channels', f'{base}/pkgs/main'],
-        [conda_bin, 'config', '--prepend', 'default_channels', f'{base}/pkgs/r'],
-        [conda_bin, 'config', '--prepend', 'default_channels', f'{base}/pkgs/msys2'],
-        [conda_bin, 'config', '--set', 'custom_channels.conda-forge', f'{base}/cloud'],
-        [conda_bin, 'config', '--set', 'custom_channels.pytorch', f'{base}/cloud'],
+        [conda_bin, 'config', *config_args,
+         '--set', 'show_channel_urls', 'yes'],
+        [conda_bin, 'config', *config_args,
+         '--prepend', 'default_channels', f'{base}/pkgs/main'],
+        [conda_bin, 'config', *config_args,
+         '--prepend', 'default_channels', f'{base}/pkgs/r'],
+        [conda_bin, 'config', *config_args,
+         '--prepend', 'default_channels', f'{base}/pkgs/msys2'],
+        [conda_bin, 'config', *config_args,
+         '--set', 'custom_channels.conda-forge', f'{base}/cloud'],
+        [conda_bin, 'config', *config_args,
+         '--set', 'custom_channels.pytorch', f'{base}/cloud'],
     ]
 
 
@@ -195,7 +202,7 @@ def set_conda_mirror(base_url):
     if not change:
         return False, error
     # 使用 --prepend 保留用户已有 default_channels，同时让 cnpip 镜像优先。
-    for cmd in conda_set_commands(conda, base_url):
+    for cmd in conda_set_commands(conda, base_url, config_path):
         result = _run(cmd)
         if result.returncode != 0:
             change.abort()

@@ -203,6 +203,13 @@ class TestConda:
         for cmd in cmds:
             assert not any('anaconda//' in part for part in cmd)
 
+    def test_set_commands_target_explicit_config_file(self, tmp_path):
+        config = tmp_path / 'condarc'
+        cmds = conda_set_commands(
+            '/usr/bin/conda', 'https://example.com/anaconda', config)
+        for cmd in cmds:
+            assert cmd[2:4] == ['--file', str(config)]
+
     def test_set_does_not_remove_existing_default_channels(self, tool_installed, monkeypatch):
         calls = []
         config = module.get_conda_config_path()
@@ -214,7 +221,8 @@ class TestConda:
         success, msg = set_conda_mirror(CONDA_MIRRORS['tuna'])
         assert success
         assert all('--remove-key' not in cmd for cmd in calls)
-        assert calls[1][2:4] == ['--prepend', 'default_channels']
+        assert calls[1][2:4] == ['--file', str(config)]
+        assert calls[1][4:6] == ['--prepend', 'default_channels']
 
     def test_set_fails_when_conda_missing(self, tool_missing):
         success, msg = set_conda_mirror(CONDA_MIRRORS['tuna'])
