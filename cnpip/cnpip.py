@@ -34,14 +34,16 @@ MIN_PYTHON_VERSION = (3, 7)
 MIRROR_PROBE_COUNT = 3
 MIRROR_PROBE_PROJECT = "pip"
 MIRROR_PROBE_USER_AGENT = f"cnpip/{__version__}"
+CONDA_MIRROR_PROBE_PATH = "/pkgs/main/noarch/repodata.json"
 if sys.version_info < MIN_PYTHON_VERSION:
     sys.stderr.write(f"错误: cnpip需要 Python {MIN_PYTHON_VERSION[0]}.{MIN_PYTHON_VERSION[1]} 或更高版本。\n")
     sys.exit(1)
 
 
-def measure_mirror_speed(name, url):
-    """对真实 PEP 503 项目页面执行多次 GET，返回响应延迟中位数。"""
-    probe_url = f"{url.rstrip('/')}/{MIRROR_PROBE_PROJECT}/"
+def measure_mirror_speed(name, url, probe_path=None):
+    """对镜像的实际服务端点执行多次 GET，返回响应延迟中位数。"""
+    probe_path = probe_path or f"/{MIRROR_PROBE_PROJECT}/"
+    probe_url = f"{url.rstrip('/')}/{probe_path.lstrip('/')}"
     durations = []
     last_error = None
     for _ in range(MIRROR_PROBE_COUNT):
@@ -91,10 +93,15 @@ def list_mirrors():
     return results
 
 
-def choose_fastest_mirror(mirrors):
+def choose_fastest_mirror(mirrors, probe_path=None):
     """并发测速并返回最快的镜像名，全部失败返回 None。"""
     with ThreadPoolExecutor(max_workers=len(mirrors)) as executor:
-        futures = [executor.submit(measure_mirror_speed, name, url) for name, url in mirrors.items()]
+        if probe_path is None:
+            futures = [executor.submit(measure_mirror_speed, name, url)
+                       for name, url in mirrors.items()]
+        else:
+            futures = [executor.submit(measure_mirror_speed, name, url, probe_path)
+                       for name, url in mirrors.items()]
         results = [f.result() for f in futures]
     results.sort(key=lambda x: x[1])
     return next((name for name, _speed, _url, error in results if error is None), None)
@@ -794,7 +801,8 @@ def apply_mirror_to_tool(tool, mirror_name, mirror_url, args):
         conda_name = mirror_name if mirror_name in CONDA_MIRRORS else None
         if conda_name is None:
             print(f"镜像源 '{mirror_name}' 不提供 conda 镜像，正在对 conda 镜像单独测速...")
-            conda_name = choose_fastest_mirror(CONDA_MIRRORS)
+            conda_name = choose_fastest_mirror(
+                CONDA_MIRRORS, probe_path=CONDA_MIRROR_PROBE_PATH)
             if conda_name is None:
                 print("错误: 无法连接到任何 conda 镜像源")
                 return False
@@ -957,7 +965,8 @@ def main():
         if args.conda:
             if args.mirror is None:
                 print("未指定镜像源，即将对支持 conda 的镜像测速...")
-                conda_mirror_name = choose_fastest_mirror(CONDA_MIRRORS)
+                conda_mirror_name = choose_fastest_mirror(
+                    CONDA_MIRRORS, probe_path=CONDA_MIRROR_PROBE_PATH)
                 if conda_mirror_name is None:
                     print("错误: 无法连接到任何 conda 镜像源")
                     sys.exit(1)
