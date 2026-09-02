@@ -17,7 +17,12 @@ DEFAULT_MIRRORS = {
     "default": "https://pypi.org/simple"
 }
 
-REMOTE_MIRRORS_URL = "https://raw.githubusercontent.com/caoergou/cnpip/main/cnpip/mirrors.json"
+# 按顺序尝试：jsDelivr CDN 在中国大陆可达，raw.githubusercontent.com 作为最终兜底
+REMOTE_MIRRORS_URLS = [
+    "https://cdn.jsdelivr.net/gh/caoergou/cnpip@main/cnpip/mirrors.json",
+    "https://fastly.jsdelivr.net/gh/caoergou/cnpip@main/cnpip/mirrors.json",
+    "https://raw.githubusercontent.com/caoergou/cnpip/main/cnpip/mirrors.json",
+]
 USER_CONFIG_DIR = Path.home() / ".cnpip"
 USER_MIRRORS_FILE = USER_CONFIG_DIR / "mirrors.json"
 
@@ -52,36 +57,43 @@ def load_mirrors():
     # 3. 硬编码
     return DEFAULT_MIRRORS.copy()
 
+def _fetch_mirrors_json(url, timeout=5):
+    """从单个 URL 获取并解析 mirrors.json，失败抛出异常。"""
+    with urllib.request.urlopen(url, timeout=timeout) as response:
+        if response.status != 200:
+            raise urllib.error.URLError(f"HTTP {response.status}")
+        data = json.loads(response.read().decode('utf-8'))
+        if not isinstance(data, dict):
+            raise ValueError("远程 JSON 格式无效")
+        return data
+
+
 def update_mirrors_from_remote():
     """
-    从远程 URL 获取镜像源并保存到用户配置文件。
+    依次尝试多个远程地址获取镜像源列表，成功后保存到用户配置文件。
     返回 (success, message/error)。
     """
-    try:
-        # 5秒超时
-        with urllib.request.urlopen(REMOTE_MIRRORS_URL, timeout=5) as response:
-            if response.status == 200:
-                data = json.loads(response.read().decode('utf-8'))
+    errors = []
+    for url in REMOTE_MIRRORS_URLS:
+        try:
+            data = _fetch_mirrors_json(url)
+        except urllib.error.URLError as e:
+            errors.append(f"{url}: 网络错误 ({getattr(e, 'reason', e)})")
+            continue
+        except socket.timeout:
+            errors.append(f"{url}: 请求超时")
+            continue
+        except Exception as e:
+            errors.append(f"{url}: {e}")
+            continue
 
-                # 验证：简单检查是否为字典
-                if not isinstance(data, dict):
-                    return False, "远程 JSON 格式无效"
+        USER_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        with open(USER_MIRRORS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+        return True, f"成功从 {url} 更新镜像源"
 
-                # 确保目录存在
-                USER_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-
-                with open(USER_MIRRORS_FILE, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, indent=4, ensure_ascii=False)
-
-                return True, f"成功从 {REMOTE_MIRRORS_URL} 更新镜像源"
-            else:
-                return False, f"获取失败: HTTP {response.status}"
-    except urllib.error.URLError as e:
-        return False, f"网络错误: {e.reason}"
-    except socket.timeout:
-        return False, "请求超时"
-    except Exception as e:
-        return False, f"错误: {e}"
+    detail = "\n".join(f"  - {e}" for e in errors)
+    return False, f"所有远程地址均获取失败:\n{detail}"
 
 # 初始化 MIRRORS 以兼容旧代码
 # 但建议调用者直接使用 load_mirrors()

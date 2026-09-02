@@ -7,7 +7,7 @@
 ![License](https://img.shields.io/github/license/caoergou/cnpip)
 ![Tests](https://github.com/caoergou/cnpip/actions/workflows/test.yml/badge.svg)
 
-`cnpip` is a command-line tool for users in **mainland China** to quickly switch `pip` mirrors and improve Python package download speeds. It benchmarks all mirrors concurrently, automatically selects the fastest one, and natively supports modern tools like `uv`.
+`cnpip` is a command-line tool for users in **mainland China** to quickly switch `pip` mirrors and improve Python package download speeds. It benchmarks all mirrors concurrently, automatically selects the fastest one, and natively supports modern tools like `uv`, `pdm`, `poetry`, and `conda`.
 
 ## Quick Start
 
@@ -25,7 +25,9 @@ uvx cnpip set
 ## Features
 
 - **One command, fastest mirror**: Concurrent latency tests across all mirrors — automatically picks and applies the winner
+- **Interactive multi-tool setup**: `cnpip set` scans installed package managers and configures the ones you pick in one go (`-y` to skip)
 - **Native uv support**: Auto-writes `uv.toml` in uvx environments; use `--uv` for explicit control at any time
+- **Covers the whole packaging ecosystem**: Configure pdm, poetry, and conda mirrors with `--pdm`, `--poetry`, `--conda`
 - **Smart environment detection**: Distinguishes uvx, conda, pipx, venv and selects the right config scope automatically — no manual flags needed
 - **Fine-grained scope control**: `--user`, `--global`, `--venv`, `--uv` — full control when you need it
 - **Cross-platform**: Linux, macOS, Windows (official installer, Microsoft Store, pyenv-win, Scoop, etc.)
@@ -64,12 +66,27 @@ default      1252.75 ms          https://pypi.org/simple
 huawei       Timeout             https://repo.huaweicloud.com/repository/pypi/simple
 ```
 
-### 2. Switch pip mirror
+### 2. Switch mirror
 
 ```bash
 cnpip set           # Auto-select the fastest mirror
 cnpip set tuna      # Manually specify a mirror
+cnpip set -y        # Skip the prompt and use the default behavior
 ```
+
+When run in a terminal, `cnpip set` first scans installed package managers and lets you pick which ones to configure:
+
+```
+检测到以下包管理工具:
+
+  1. pip      当前源: 默认
+  2. uv       当前源: 默认
+  3. conda    用户级 (~/.condarc)
+
+请选择要配置的工具（编号，空格分隔多个；a=全部；回车=1 即 pip）:
+```
+
+Non-TTY environments (scripts/CI), explicit tool flags like `--uv`, and `-y` all skip the prompt and behave exactly like previous versions.
 
 **Default scope (auto-detected):**
 
@@ -129,9 +146,27 @@ uv 配置文件: /home/user/.config/uv/uv.toml
 uv 镜像源: https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
-### 5. Update mirror list
+### 5. Configure pdm / poetry / conda mirrors
 
-Fetch the latest mirror list from GitHub:
+```bash
+cnpip set --pdm            # Benchmark and configure pdm (user-level pdm config)
+cnpip set tuna --poetry    # Point the current poetry project at TUNA (writes pyproject.toml)
+cnpip set --conda          # Benchmark and configure conda (writes ~/.condarc)
+
+cnpip unset --pdm          # Restore each tool's default source
+cnpip unset --poetry
+cnpip unset --conda
+```
+
+Notes:
+
+- **pdm**: Writes user-level config (`pdm config pypi.url`), applies to all projects
+- **poetry**: Poetry has no global mirror setting; the source is written to the current project's `pyproject.toml` (source name: `cnpip`) — run from the project root
+- **conda**: Anaconda mirrors are a separate service from PyPI mirrors; currently `tuna`, `ustc`, `nju`, and `sustech` are supported, configuring `default_channels` plus the conda-forge / pytorch community channels
+
+### 6. Update mirror list
+
+Fetch the latest mirror list (tries jsDelivr CDN first, then GitHub — no proxy needed in mainland China):
 
 ```bash
 cnpip update
@@ -141,8 +176,11 @@ cnpip update
 
 `cnpip` automatically selects the right config file based on your environment. Run `cnpip info` to see the actual paths in use.
 
-- **pip config**: Only modifies `global.index-url` and `global.trusted-host`; leaves everything else untouched
+- **pip config**: Only modifies `global.index-url`; `global.trusted-host` is written only for http mirrors (trusted-host disables TLS verification, so https mirrors must not set it)
 - **uv config**: Writes an `[[index]]` block to `uv.toml`; leaves all other uv settings untouched
+- **pdm config**: Written via `pdm config` to the user-level `config.toml`
+- **poetry config**: Written via `poetry source add` to the current project's `pyproject.toml`
+- **conda config**: Written via `conda config` to `~/.condarc`
 
 ## FAQ
 
@@ -169,6 +207,14 @@ Yes. When you run `uvx cnpip set`, cnpip detects the uvx environment and writes 
 cnpip set --uv tuna    # Set uv to use TUNA mirror
 cnpip set --uv         # Auto-select fastest mirror and write to uv config
 ```
+
+### 5. Why does `--conda` support fewer mirrors than pip?
+
+Anaconda mirrors are an independent service from PyPI mirrors, and not every PyPI mirror site also hosts an anaconda mirror (Aliyun, for example, has discontinued theirs). cnpip only lists conda mirrors verified to be working.
+
+### 6. Why does `cnpip set --poetry` require a pyproject.toml?
+
+Poetry has no global mirror setting — sources can only be written into a specific project's `pyproject.toml`. `cd` into your poetry project root first.
 
 ## License
 

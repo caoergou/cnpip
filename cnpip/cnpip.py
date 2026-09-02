@@ -14,6 +14,16 @@ from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor
 
 from .mirrors import MIRRORS, update_mirrors_from_remote
+from .integrations import (
+    CONDA_MIRRORS,
+    get_pdm_mirror,
+    set_conda_mirror,
+    set_pdm_mirror,
+    set_poetry_mirror,
+    unset_conda_mirror,
+    unset_pdm_mirror,
+    unset_poetry_mirror,
+)
 from . import __version__
 
 MIN_PYTHON_VERSION = (3, 7)
@@ -63,6 +73,15 @@ def list_mirrors():
     return results
 
 
+def choose_fastest_mirror(mirrors):
+    """并发测速并返回最快的镜像名，全部失败返回 None。"""
+    with ThreadPoolExecutor(max_workers=len(mirrors)) as executor:
+        futures = [executor.submit(measure_mirror_speed, name, url) for name, url in mirrors.items()]
+        results = [f.result() for f in futures]
+    results.sort(key=lambda x: x[1])
+    return next((name for name, _speed, _url, error in results if error is None), None)
+
+
 def print_mirror_results(results):
     name_width = max(len(name) for name in MIRRORS.keys()) + 2
     time_width = 20
@@ -80,6 +99,11 @@ def print_mirror_results(results):
             # Truncate error if too long
             error_msg = (error[:17] + '..') if len(error) > 19 else error
             print(f"{name:<{name_width}}\t{error_msg:<{time_width}}\t{url:<{url_width}}")
+
+
+def needs_trusted_host(mirror_url):
+    """trusted-host 会跳过 TLS 校验，只有 http 镜像才需要设置。"""
+    return urlparse(mirror_url).scheme == 'http'
 
 
 def is_pip_installed():
@@ -436,14 +460,17 @@ def write_pip_config_directly(mirror_url, scope):
     if config_path is None:
         return False, f"不支持的作用域: {scope}"
 
-    host = urlparse(mirror_url).netloc
     config = configparser.ConfigParser()
     if config_path.exists():
         config.read(config_path, encoding='utf-8')
     if not config.has_section('global'):
         config.add_section('global')
     config.set('global', 'index-url', mirror_url)
-    config.set('global', 'trusted-host', host)
+    # trusted-host 会跳过 TLS 校验，仅对 http 镜像有必要；https 镜像应移除残留配置
+    if needs_trusted_host(mirror_url):
+        config.set('global', 'trusted-host', urlparse(mirror_url).netloc)
+    elif config.has_option('global', 'trusted-host'):
+        config.remove_option('global', 'trusted-host')
 
     try:
         config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -494,6 +521,7 @@ def unset_pip_config_directly(scope):
 def update_pip_config(mirror_url, scope_args):
     # 提取主机名
     host = urlparse(mirror_url).netloc
+    set_trusted = needs_trusted_host(mirror_url)
     scope_str = " ".join(scope_args) if scope_args else "auto"
     scope_desc = get_scope_description(scope_args)
 
@@ -518,7 +546,8 @@ def update_pip_config(mirror_url, scope_args):
             else:
                 print(f"请复制以下命令在终端运行以生效配置 ({scope_desc}):")
                 print(f"pip config set {scope_str} global.index-url {mirror_url}")
-                print(f"pip config set {scope_str} global.trusted-host {host}")
+                if set_trusted:
+                    print(f"pip config set {scope_str} global.trusted-host {host}")
         return
 
     print(f"\n正在修改 [{scope_desc}] ...", flush=True)
@@ -532,7 +561,12 @@ def update_pip_config(mirror_url, scope_args):
         # 用户的需求是清晰的输出，pip config set 会输出 "Writing to ..."
         # 我们保留它，因为它告诉用户文件位置
         subprocess.run([sys.executable, '-m', 'pip', 'config', 'set'] + scope_args + ['global.index-url', mirror_url], check=True)
-        subprocess.run([sys.executable, '-m', 'pip', 'config', 'set'] + scope_args + ['global.trusted-host', host], check=True)
+        if set_trusted:
+            subprocess.run([sys.executable, '-m', 'pip', 'config', 'set'] + scope_args + ['global.trusted-host', host], check=True)
+        else:
+            # https 镜像无需 trusted-host，清理可能残留的旧配置（不存在时 pip 会报错，忽略即可）
+            subprocess.run([sys.executable, '-m', 'pip', 'config', 'unset'] + scope_args + ['global.trusted-host'],
+                           check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         # 获取修改后配置
         new_index, new_host = get_pip_config()
@@ -545,7 +579,8 @@ def update_pip_config(mirror_url, scope_args):
             print(get_global_scope_hint())
         print(f"\n请尝试手动运行以下命令:")
         print(f"pip config set {scope_str} global.index-url {mirror_url}")
-        print(f"pip config set {scope_str} global.trusted-host {host}")
+        if set_trusted:
+            print(f"pip config set {scope_str} global.trusted-host {host}")
 
 
 def unset_pip_mirror(scope_args) -> None:
@@ -670,6 +705,151 @@ def show_info():
     else:
         print("uv: 未安装")
 
+    # 其他包管理工具
+    print("\n--- 其他包管理工具 ---")
+    for tool in ('pdm', 'poetry', 'conda'):
+        binary = shutil.which(tool)
+        if not binary:
+            print(f"{tool}: 未安装")
+            continue
+        try:
+            ver_result = subprocess.run(
+                [binary, '--version'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                encoding='utf-8',
+                errors='replace'
+            )
+            print(f"{tool}: {ver_result.stdout.strip() or '已安装'}")
+        except Exception:
+            print(f"{tool}: 已安装 (版本获取失败)")
+        if tool == 'pdm':
+            pdm_mirror = get_pdm_mirror()
+            if pdm_mirror:
+                print(f"pdm 镜像源: {pdm_mirror}")
+
+
+# === 交互式 set ===
+
+def scan_available_tools():
+    """扫描当前可配置镜像源的包管理工具，返回 (名称, 状态描述) 列表。"""
+    tools = []
+    if is_pip_installed():
+        index_url, _ = get_pip_config()
+        tools.append(('pip', f"当前源: {index_url or '默认'}"))
+    if detect_uv_binary():
+        tools.append(('uv', f"当前源: {get_uv_index_url() or '默认'}"))
+    if shutil.which('pdm'):
+        tools.append(('pdm', f"当前源: {get_pdm_mirror() or '默认'}"))
+    if shutil.which('poetry') and Path('pyproject.toml').exists():
+        tools.append(('poetry', '当前项目 (pyproject.toml)'))
+    if shutil.which('conda'):
+        tools.append(('conda', '用户级 (~/.condarc)'))
+    return tools
+
+
+def default_tool_selection(tool_names):
+    """回车时的默认选择：与非交互行为一致（uvx 环境配 uv，否则配 pip）。"""
+    if detect_environment() == 'uvx' and 'uv' in tool_names:
+        return ['uv']
+    if 'pip' in tool_names:
+        return ['pip']
+    return tool_names[:1]
+
+
+def parse_tool_selection(raw, tool_names, default):
+    """解析用户输入的工具选择（编号/a/回车），非法输入返回 None。"""
+    raw = raw.strip().lower()
+    if not raw:
+        return list(default)
+    if raw in ('a', 'all', '全部'):
+        return list(tool_names)
+    picked = []
+    for token in re.split(r'[\s,，]+', raw):
+        if not token.isdigit() or not 1 <= int(token) <= len(tool_names):
+            return None
+        name = tool_names[int(token) - 1]
+        if name not in picked:
+            picked.append(name)
+    return picked or None
+
+
+def apply_mirror_to_tool(tool, mirror_name, mirror_url, args):
+    """将镜像源应用到单个工具，返回是否成功。"""
+    if tool == 'pip':
+        update_pip_config(mirror_url, get_scope_args(args))
+        return True
+    if tool == 'uv':
+        success, msg = update_uv_config(mirror_url)
+    elif tool == 'pdm':
+        success, msg = set_pdm_mirror(mirror_url)
+    elif tool == 'poetry':
+        success, msg = set_poetry_mirror(mirror_url)
+    elif tool == 'conda':
+        # conda 镜像是独立服务，选中的 pypi 镜像不提供时单独测速
+        conda_name = mirror_name if mirror_name in CONDA_MIRRORS else None
+        if conda_name is None:
+            print(f"镜像源 '{mirror_name}' 不提供 conda 镜像，正在对 conda 镜像单独测速...")
+            conda_name = choose_fastest_mirror(CONDA_MIRRORS)
+            if conda_name is None:
+                print("错误: 无法连接到任何 conda 镜像源")
+                return False
+            print(f"自动选择最快的 conda 镜像源: {conda_name}")
+        success, msg = set_conda_mirror(CONDA_MIRRORS[conda_name])
+    else:
+        return False
+    print(msg)
+    return success
+
+
+def run_interactive_set(args):
+    """交互式 set：扫描已安装的包管理工具，让用户选择要配置哪些。"""
+    tools = scan_available_tools()
+    if not tools:
+        print("错误: 未检测到任何可配置的包管理工具")
+        sys.exit(1)
+
+    tool_names = [name for name, _ in tools]
+    print("检测到以下包管理工具:\n")
+    for i, (name, desc) in enumerate(tools, 1):
+        print(f"  {i}. {name:<8} {desc}")
+
+    default = default_tool_selection(tool_names)
+    default_str = ' '.join(str(tool_names.index(t) + 1) for t in default)
+    prompt = (f"\n请选择要配置的工具（编号，空格分隔多个；a=全部；"
+              f"回车={default_str} 即 {'/'.join(default)}）: ")
+    try:
+        while True:
+            selection = parse_tool_selection(input(prompt), tool_names, default)
+            if selection is not None:
+                break
+            print("输入无效，请输入列表中的编号（如: 1 3）、a 或直接回车")
+    except (EOFError, KeyboardInterrupt):
+        print("\n已取消")
+        sys.exit(1)
+
+    # 解析镜像名：未指定时测速选最快
+    if args.mirror is None:
+        results = list_mirrors()
+        mirror_name = next((name for name, _speed, _url, error in results if error is None), None)
+        if mirror_name is None:
+            print("错误: 无法连接到任何镜像源")
+            sys.exit(1)
+        print(f"自动选择最快的镜像源: {mirror_name}")
+    elif args.mirror not in MIRRORS:
+        print(f"错误: 未找到镜像源 '{args.mirror}'")
+        sys.exit(1)
+    else:
+        mirror_name = args.mirror
+
+    mirror_url = MIRRORS[mirror_name]
+    all_ok = True
+    for tool in selection:
+        print(f"\n--- {tool} ---")
+        if not apply_mirror_to_tool(tool, mirror_name, mirror_url, args):
+            all_ok = False
+    sys.exit(0 if all_ok else 1)
+
 
 def main():
     """主函数，解析命令行参数并执行相应操作"""
@@ -682,12 +862,43 @@ def main():
     group.add_argument("--user", action="store_true", help="设置当前用户配置")
     group.add_argument("--venv", "--site", dest="venv", action="store_true", help="设置当前虚拟环境配置")
     group.add_argument("--uv", dest="uv", action="store_true", help="配置 uv 镜像源 (写入 uv.toml，不修改 pip)")
+    group.add_argument("--pdm", dest="pdm", action="store_true", help="配置 pdm 镜像源 (用户级 pdm config)")
+    group.add_argument("--poetry", dest="poetry", action="store_true", help="配置 poetry 镜像源 (当前项目 pyproject.toml)")
+    group.add_argument("--conda", dest="conda", action="store_true", help="配置 conda 镜像源 (写入 ~/.condarc)")
+    parser.add_argument("-y", "--yes", action="store_true",
+                        help="跳过交互式工具选择，直接使用默认行为")
 
     args = parser.parse_args()
 
     if args.command == "list":
         list_mirrors()
     elif args.command == "set":
+        # 交互式：TTY 下未指定任何工具/作用域 flag 时，扫描环境让用户选择要配置的工具
+        explicit_flags = (args.uv or args.pdm or args.poetry or args.conda
+                          or args.global_ or args.user or args.venv)
+        if (not explicit_flags and not args.yes
+                and sys.stdin.isatty() and sys.stdout.isatty()):
+            run_interactive_set(args)
+
+        # conda 使用独立的镜像表（anaconda 镜像与 pypi 镜像是不同的服务）
+        if args.conda:
+            if args.mirror is None:
+                print("未指定镜像源，即将对支持 conda 的镜像测速...")
+                conda_mirror_name = choose_fastest_mirror(CONDA_MIRRORS)
+                if conda_mirror_name is None:
+                    print("错误: 无法连接到任何 conda 镜像源")
+                    sys.exit(1)
+                print(f"自动选择最快的镜像源: {conda_mirror_name}")
+            elif args.mirror not in CONDA_MIRRORS:
+                print(f"错误: 镜像源 '{args.mirror}' 不提供 conda 镜像")
+                print(f"支持 conda 的镜像源: {', '.join(CONDA_MIRRORS)}")
+                sys.exit(1)
+            else:
+                conda_mirror_name = args.mirror
+            success, msg = set_conda_mirror(CONDA_MIRRORS[conda_mirror_name])
+            print(msg)
+            sys.exit(0 if success else 1)
+
         # 解析镜像名（set/unset 共用）
         if args.mirror is None:
             print("未指定镜像源，即将测速并选择最快的镜像源...")
@@ -716,6 +927,14 @@ def main():
             print(msg)
             if not success:
                 sys.exit(1)
+        elif args.pdm:
+            success, msg = set_pdm_mirror(mirror_url)
+            print(msg)
+            sys.exit(0 if success else 1)
+        elif args.poetry:
+            success, msg = set_poetry_mirror(mirror_url)
+            print(msg)
+            sys.exit(0 if success else 1)
         else:
             env = detect_environment()
             if env == 'uvx' and not args.global_ and not args.user and not args.venv:
@@ -736,6 +955,18 @@ def main():
     elif args.command == "unset":
         if args.uv:
             success, msg = unset_uv_config()
+            print(msg)
+            sys.exit(0 if success else 1)
+        elif args.pdm:
+            success, msg = unset_pdm_mirror()
+            print(msg)
+            sys.exit(0 if success else 1)
+        elif args.poetry:
+            success, msg = unset_poetry_mirror()
+            print(msg)
+            sys.exit(0 if success else 1)
+        elif args.conda:
+            success, msg = unset_conda_mirror()
             print(msg)
             sys.exit(0 if success else 1)
         else:

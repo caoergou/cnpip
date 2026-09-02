@@ -6,8 +6,9 @@ from cnpip.cnpip import write_pip_config_directly, unset_pip_config_directly
 
 MIRROR_URL = 'https://pypi.tuna.tsinghua.edu.cn/simple'
 ALT_URL = 'https://mirrors.aliyun.com/pypi/simple'
+HTTP_URL = 'http://mirrors.example.com/pypi/simple'
 MIRROR_HOST = 'pypi.tuna.tsinghua.edu.cn'
-ALT_HOST = 'mirrors.aliyun.com'
+HTTP_HOST = 'mirrors.example.com'
 
 
 def read_config(path):
@@ -28,10 +29,23 @@ class TestWritePipConfigDirectly:
         cfg = read_config(fake_pip_config_path / 'pip.conf')
         assert cfg.get('global', 'index-url') == MIRROR_URL
 
-    def test_writes_trusted_host(self, fake_pip_config_path):
+    def test_https_mirror_skips_trusted_host(self, fake_pip_config_path):
+        # trusted-host 会跳过 TLS 校验，https 镜像不应写入
         write_pip_config_directly(MIRROR_URL, 'user')
         cfg = read_config(fake_pip_config_path / 'pip.conf')
-        assert cfg.get('global', 'trusted-host') == MIRROR_HOST
+        assert not cfg.has_option('global', 'trusted-host')
+
+    def test_http_mirror_writes_trusted_host(self, fake_pip_config_path):
+        write_pip_config_directly(HTTP_URL, 'user')
+        cfg = read_config(fake_pip_config_path / 'pip.conf')
+        assert cfg.get('global', 'trusted-host') == HTTP_HOST
+
+    def test_switch_http_to_https_removes_stale_trusted_host(self, fake_pip_config_path):
+        write_pip_config_directly(HTTP_URL, 'user')
+        write_pip_config_directly(MIRROR_URL, 'user')
+        cfg = read_config(fake_pip_config_path / 'pip.conf')
+        assert cfg.get('global', 'index-url') == MIRROR_URL
+        assert not cfg.has_option('global', 'trusted-host')
 
     def test_creates_parent_directories(self, fake_pip_config_path):
         # fake_pip_config_path 目录此时还不存在
@@ -46,7 +60,6 @@ class TestWritePipConfigDirectly:
         assert success, msg
         cfg = read_config(fake_pip_config_path / 'pip.conf')
         assert cfg.get('global', 'index-url') == ALT_URL
-        assert cfg.get('global', 'trusted-host') == ALT_HOST
 
     def test_preserves_other_config_sections(self, fake_pip_config_path):
         # 预先写入其他配置
@@ -89,7 +102,8 @@ class TestUnsetPipConfigDirectly:
         assert not cfg.has_option('global', 'index-url')
 
     def test_removes_trusted_host(self, fake_pip_config_path):
-        write_pip_config_directly(MIRROR_URL, 'user')
+        # 用 http 镜像写入以确保 trusted-host 存在
+        write_pip_config_directly(HTTP_URL, 'user')
         unset_pip_config_directly('user')
         cfg = read_config(fake_pip_config_path / 'pip.conf')
         assert not cfg.has_option('global', 'trusted-host')
