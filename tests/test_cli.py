@@ -183,6 +183,46 @@ class TestMirrorProbe:
         assert all(request.full_url.endswith('/simple/pip/') for request, _ in calls)
         assert all(request.get_method() == 'GET' for request, _ in calls)
 
+    def test_conda_probe_uses_conda_metadata_endpoint(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(module, 'measure_mirror_speed', REAL_MEASURE_MIRROR_SPEED)
+
+        class FakeResponse:
+            status = 200
+
+            def read(self, size):
+                return b'{"packages": {}}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        monkeypatch.setattr(
+            module.urllib.request,
+            'urlopen',
+            lambda request, timeout: calls.append(request.full_url) or FakeResponse(),
+        )
+        clock = iter([0.0, 0.10, 1.0, 1.10, 2.0, 2.10])
+        monkeypatch.setattr(module.time, 'monotonic', lambda: next(clock))
+
+        name, speed, url, error = module.measure_mirror_speed(
+            'tuna',
+            'https://mirrors.tuna.tsinghua.edu.cn/anaconda',
+            module.CONDA_MIRROR_PROBE_PATH,
+        )
+
+        assert (name, url, error) == (
+            'tuna',
+            'https://mirrors.tuna.tsinghua.edu.cn/anaconda',
+            None,
+        )
+        assert speed == 100.0
+        assert calls == [
+            'https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main/noarch/repodata.json'
+        ] * module.MIRROR_PROBE_COUNT
+
     def test_flag_without_command_defaults_to_set(self, monkeypatch, fake_uv_config_path):
         monkeypatch.setattr(sys, 'argv', ['cnpip', 'tuna', '--uv'])
         monkeypatch.setattr(module, 'detect_uv_binary', lambda: '/usr/bin/uv')

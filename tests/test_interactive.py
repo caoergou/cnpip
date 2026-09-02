@@ -70,12 +70,18 @@ class TestApplyMirrorToTool:
     def test_conda_rebenchmarks_when_mirror_has_no_conda(self, monkeypatch):
         # aliyun 无 conda 镜像：应单独测速并回落到可用的 conda 镜像
         received = {}
-        monkeypatch.setattr(module, 'choose_fastest_mirror', lambda mirrors: 'ustc')
+        probe = {}
+        monkeypatch.setattr(
+            module,
+            'choose_fastest_mirror',
+            lambda mirrors, probe_path=None: probe.update(path=probe_path) or 'ustc',
+        )
         monkeypatch.setattr(module, 'set_conda_mirror',
                             lambda url: received.update(url=url) or (True, 'ok'))
         ok = apply_mirror_to_tool('conda', 'aliyun', module.MIRRORS['aliyun'], None)
         assert ok
         assert received['url'] == module.CONDA_MIRRORS['ustc']
+        assert probe['path'] == module.CONDA_MIRROR_PROBE_PATH
 
     def test_pdm_routes_to_pdm(self, monkeypatch):
         received = {}
