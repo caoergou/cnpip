@@ -729,6 +729,128 @@ def show_info():
                 print(f"pdm 镜像源: {pdm_mirror}")
 
 
+# === 交互式 set ===
+
+def scan_available_tools():
+    """扫描当前可配置镜像源的包管理工具，返回 (名称, 状态描述) 列表。"""
+    tools = []
+    if is_pip_installed():
+        index_url, _ = get_pip_config()
+        tools.append(('pip', f"当前源: {index_url or '默认'}"))
+    if detect_uv_binary():
+        tools.append(('uv', f"当前源: {get_uv_index_url() or '默认'}"))
+    if shutil.which('pdm'):
+        tools.append(('pdm', f"当前源: {get_pdm_mirror() or '默认'}"))
+    if shutil.which('poetry') and Path('pyproject.toml').exists():
+        tools.append(('poetry', '当前项目 (pyproject.toml)'))
+    if shutil.which('conda'):
+        tools.append(('conda', '用户级 (~/.condarc)'))
+    return tools
+
+
+def default_tool_selection(tool_names):
+    """回车时的默认选择：与非交互行为一致（uvx 环境配 uv，否则配 pip）。"""
+    if detect_environment() == 'uvx' and 'uv' in tool_names:
+        return ['uv']
+    if 'pip' in tool_names:
+        return ['pip']
+    return tool_names[:1]
+
+
+def parse_tool_selection(raw, tool_names, default):
+    """解析用户输入的工具选择（编号/a/回车），非法输入返回 None。"""
+    raw = raw.strip().lower()
+    if not raw:
+        return list(default)
+    if raw in ('a', 'all', '全部'):
+        return list(tool_names)
+    picked = []
+    for token in re.split(r'[\s,，]+', raw):
+        if not token.isdigit() or not 1 <= int(token) <= len(tool_names):
+            return None
+        name = tool_names[int(token) - 1]
+        if name not in picked:
+            picked.append(name)
+    return picked or None
+
+
+def apply_mirror_to_tool(tool, mirror_name, mirror_url, args):
+    """将镜像源应用到单个工具，返回是否成功。"""
+    if tool == 'pip':
+        update_pip_config(mirror_url, get_scope_args(args))
+        return True
+    if tool == 'uv':
+        success, msg = update_uv_config(mirror_url)
+    elif tool == 'pdm':
+        success, msg = set_pdm_mirror(mirror_url)
+    elif tool == 'poetry':
+        success, msg = set_poetry_mirror(mirror_url)
+    elif tool == 'conda':
+        # conda 镜像是独立服务，选中的 pypi 镜像不提供时单独测速
+        conda_name = mirror_name if mirror_name in CONDA_MIRRORS else None
+        if conda_name is None:
+            print(f"镜像源 '{mirror_name}' 不提供 conda 镜像，正在对 conda 镜像单独测速...")
+            conda_name = choose_fastest_mirror(CONDA_MIRRORS)
+            if conda_name is None:
+                print("错误: 无法连接到任何 conda 镜像源")
+                return False
+            print(f"自动选择最快的 conda 镜像源: {conda_name}")
+        success, msg = set_conda_mirror(CONDA_MIRRORS[conda_name])
+    else:
+        return False
+    print(msg)
+    return success
+
+
+def run_interactive_set(args):
+    """交互式 set：扫描已安装的包管理工具，让用户选择要配置哪些。"""
+    tools = scan_available_tools()
+    if not tools:
+        print("错误: 未检测到任何可配置的包管理工具")
+        sys.exit(1)
+
+    tool_names = [name for name, _ in tools]
+    print("检测到以下包管理工具:\n")
+    for i, (name, desc) in enumerate(tools, 1):
+        print(f"  {i}. {name:<8} {desc}")
+
+    default = default_tool_selection(tool_names)
+    default_str = ' '.join(str(tool_names.index(t) + 1) for t in default)
+    prompt = (f"\n请选择要配置的工具（编号，空格分隔多个；a=全部；"
+              f"回车={default_str} 即 {'/'.join(default)}）: ")
+    try:
+        while True:
+            selection = parse_tool_selection(input(prompt), tool_names, default)
+            if selection is not None:
+                break
+            print("输入无效，请输入列表中的编号（如: 1 3）、a 或直接回车")
+    except (EOFError, KeyboardInterrupt):
+        print("\n已取消")
+        sys.exit(1)
+
+    # 解析镜像名：未指定时测速选最快
+    if args.mirror is None:
+        results = list_mirrors()
+        mirror_name = next((name for name, _speed, _url, error in results if error is None), None)
+        if mirror_name is None:
+            print("错误: 无法连接到任何镜像源")
+            sys.exit(1)
+        print(f"自动选择最快的镜像源: {mirror_name}")
+    elif args.mirror not in MIRRORS:
+        print(f"错误: 未找到镜像源 '{args.mirror}'")
+        sys.exit(1)
+    else:
+        mirror_name = args.mirror
+
+    mirror_url = MIRRORS[mirror_name]
+    all_ok = True
+    for tool in selection:
+        print(f"\n--- {tool} ---")
+        if not apply_mirror_to_tool(tool, mirror_name, mirror_url, args):
+            all_ok = False
+    sys.exit(0 if all_ok else 1)
+
+
 def main():
     """主函数，解析命令行参数并执行相应操作"""
     parser = argparse.ArgumentParser(description="轻松管理 pip 镜像源。")
@@ -743,12 +865,21 @@ def main():
     group.add_argument("--pdm", dest="pdm", action="store_true", help="配置 pdm 镜像源 (用户级 pdm config)")
     group.add_argument("--poetry", dest="poetry", action="store_true", help="配置 poetry 镜像源 (当前项目 pyproject.toml)")
     group.add_argument("--conda", dest="conda", action="store_true", help="配置 conda 镜像源 (写入 ~/.condarc)")
+    parser.add_argument("-y", "--yes", action="store_true",
+                        help="跳过交互式工具选择，直接使用默认行为")
 
     args = parser.parse_args()
 
     if args.command == "list":
         list_mirrors()
     elif args.command == "set":
+        # 交互式：TTY 下未指定任何工具/作用域 flag 时，扫描环境让用户选择要配置的工具
+        explicit_flags = (args.uv or args.pdm or args.poetry or args.conda
+                          or args.global_ or args.user or args.venv)
+        if (not explicit_flags and not args.yes
+                and sys.stdin.isatty() and sys.stdout.isatty()):
+            run_interactive_set(args)
+
         # conda 使用独立的镜像表（anaconda 镜像与 pypi 镜像是不同的服务）
         if args.conda:
             if args.mirror is None:
