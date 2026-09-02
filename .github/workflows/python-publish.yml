@@ -5,7 +5,7 @@ on:
     types: [published]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   deploy:
@@ -13,37 +13,35 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        ref: main
+        ref: ${{ github.event.release.tag_name }}
         fetch-depth: 0
-    
-    - name: Get version from tag
-      id: get_version
-      run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
 
-    - name: Update version in files
+    - name: Verify tag version
+      env:
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
       run: |
-        # Update version in pyproject.toml
-        sed -i "s/^version = .*/version = \"$VERSION\"/" pyproject.toml
+        python - <<'PY'
+        import re
+        import os
+        from pathlib import Path
 
-        # Update version in setup.py
-        sed -i "s/version=\".*\"/version=\"$VERSION\"/" setup.py
-
-        # Update __version__ in cnpip/__init__.py
-        sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" cnpip/__init__.py
-
-        # 提交更改
-        git config --local user.email "github-actions[bot]@users.noreply.github.com"
-        git config --local user.name "github-actions[bot]"
-
-        if [[ -n $(git status --porcelain) ]]; then
-          git commit -am "chore: bump version to $VERSION"
-          git push origin main
-        else
-          echo "No changes to commit. Version is already up to date."
-        fi
+        tag = os.environ["RELEASE_TAG"]
+        if not re.fullmatch(r"v\d+\.\d+\.\d+", tag):
+            raise SystemExit(f"Release tag must use vMAJOR.MINOR.PATCH: {tag}")
+        expected = tag[1:]
+        project = Path("pyproject.toml").read_text(encoding="utf-8")
+        setup = Path("setup.py").read_text(encoding="utf-8")
+        package = Path("cnpip/__init__.py").read_text(encoding="utf-8")
+        if (
+            f'version = "{expected}"' not in project
+            or f'version="{expected}"' not in setup
+            or f'__version__ = "{expected}"' not in package
+        ):
+            raise SystemExit(f"Package version does not match release tag {tag}")
+        PY
 
     - name: Set up Python
-      uses: actions/setup-python@v3
+      uses: actions/setup-python@v5
       with:
         python-version: '3.x'
 
