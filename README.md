@@ -14,13 +14,21 @@
 
 ```bash
 pip install cnpip
-cnpip set
+cnpip
 ```
+
+不需要记任何参数——直接运行 `cnpip` 就会测速并自动换源。
 
 或通过 `uvx` 临时运行（自动配置 uv 镜像源，无需安装）：
 
 ```bash
-uvx cnpip set
+uvx cnpip
+```
+
+也可以直接指定镜像源：
+
+```bash
+cnpip tuna          # 等同于 cnpip set tuna
 ```
 
 ## 功能
@@ -70,8 +78,8 @@ huawei       Timeout             https://repo.huaweicloud.com/repository/pypi/si
 ### 2. 切换镜像源
 
 ```bash
-cnpip set           # 测速并自动选择最快镜像源
-cnpip set tuna      # 手动指定镜像源
+cnpip               # 测速并自动选择最快镜像源（等同 cnpip set）
+cnpip tuna          # 手动指定镜像源（等同 cnpip set tuna）
 cnpip set -y        # 跳过交互，直接使用默认行为（等同旧版）
 ```
 
@@ -170,7 +178,7 @@ cnpip unset --conda
 获取最新的镜像源列表（依次尝试 jsDelivr CDN 与 GitHub，无需科学上网）：
 
 ```bash
-cnpip update
+cnpip sync
 ```
 
 ## 配置文件
