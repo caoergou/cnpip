@@ -36,6 +36,9 @@ dev = ["pytest>=7.0"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v"
+markers = [
+    "real_cli: tests that execute real third-party CLI tools in an isolated environment",
+]
 
 [project.urls]
 Homepage = "https://github.com/caoergou/cnpip"
