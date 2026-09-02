@@ -83,6 +83,47 @@ class TestPdm:
         assert success
         assert calls == []
 
+    def test_unset_restores_existing_value(self, tool_installed, monkeypatch):
+        calls = []
+        monkeypatch.setattr(module, '_run', fake_run_factory(calls))
+        values = iter(['https://pypi.org/simple', MIRROR_URL, MIRROR_URL])
+        monkeypatch.setattr(module, 'get_pdm_mirror', lambda: next(values))
+
+        success, msg = set_pdm_mirror(MIRROR_URL)
+        assert success, msg
+        success, msg = unset_pdm_mirror()
+        assert success, msg
+        assert calls == [
+            ['/usr/bin/pdm', 'config', 'pypi.url', MIRROR_URL],
+            ['/usr/bin/pdm', 'config', 'pypi.url', 'https://pypi.org/simple'],
+        ]
+
+    def test_set_rolls_back_when_verification_fails(self, tool_installed, monkeypatch):
+        calls = []
+        monkeypatch.setattr(module, '_run', fake_run_factory(calls))
+        values = iter([None, 'https://unexpected.example/simple'])
+        monkeypatch.setattr(module, 'get_pdm_mirror', lambda: next(values))
+
+        success, msg = set_pdm_mirror(MIRROR_URL)
+        assert not success
+        assert '验证失败' in msg
+        assert calls == [
+            ['/usr/bin/pdm', 'config', 'pypi.url', MIRROR_URL],
+            ['/usr/bin/pdm', 'config', '--delete', 'pypi.url'],
+        ]
+
+    def test_unset_refuses_external_drift(self, tool_installed, monkeypatch):
+        calls = []
+        monkeypatch.setattr(module, '_run', fake_run_factory(calls))
+        module.record_managed_value('pdm:user', None, MIRROR_URL)
+        monkeypatch.setattr(module, 'get_pdm_mirror',
+                            lambda: 'https://external.example/simple')
+
+        success, msg = unset_pdm_mirror()
+        assert not success
+        assert '拒绝覆盖' in msg
+        assert calls == []
+
 
 class TestPoetry:
     def test_set_requires_pyproject(self, tool_installed, tmp_path, monkeypatch):
@@ -162,6 +203,13 @@ class TestConda:
         for cmd in cmds:
             assert not any('anaconda//' in part for part in cmd)
 
+    def test_set_commands_target_explicit_config_file(self, tmp_path):
+        config = tmp_path / 'condarc'
+        cmds = conda_set_commands(
+            '/usr/bin/conda', 'https://example.com/anaconda', config)
+        for cmd in cmds:
+            assert cmd[2:4] == ['--file', str(config)]
+
     def test_set_does_not_remove_existing_default_channels(self, tool_installed, monkeypatch):
         calls = []
         config = module.get_conda_config_path()
@@ -173,7 +221,8 @@ class TestConda:
         success, msg = set_conda_mirror(CONDA_MIRRORS['tuna'])
         assert success
         assert all('--remove-key' not in cmd for cmd in calls)
-        assert calls[1][2:4] == ['--prepend', 'default_channels']
+        assert calls[1][2:4] == ['--file', str(config)]
+        assert calls[1][4:6] == ['--prepend', 'default_channels']
 
     def test_set_fails_when_conda_missing(self, tool_missing):
         success, msg = set_conda_mirror(CONDA_MIRRORS['tuna'])
@@ -196,6 +245,56 @@ class TestConda:
         success, msg = unset_conda_mirror()
         assert success
         assert config.read_bytes() == original
+
+    def test_config_path_honors_condarc(self, tmp_path, monkeypatch):
+        configured = tmp_path / 'custom' / 'condarc'
+        monkeypatch.setenv('CONDARC', str(configured))
+        assert module.get_conda_config_path() == configured.resolve()
+
+    @pytest.mark.parametrize('failed_call', range(6))
+    def test_set_rolls_back_after_any_command_failure(
+            self, tool_installed, monkeypatch, failed_call):
+        config = module.get_conda_config_path()
+        original = config.read_bytes()
+        calls = []
+
+        def fake_run(cmd):
+            calls.append(cmd)
+            # 模拟 conda 在返回失败前已经改写了配置，确保 abort 真正恢复原文件。
+            config.write_text(f'partial-change: {len(calls)}\n', encoding='utf-8')
+            if len(calls) - 1 == failed_call:
+                return SimpleNamespace(returncode=1, stdout='', stderr='boom')
+            return SimpleNamespace(returncode=0, stdout='', stderr='')
+
+        monkeypatch.setattr(module, '_run', fake_run)
+        success, msg = set_conda_mirror(CONDA_MIRRORS['tuna'])
+
+        assert not success
+        assert 'boom' in msg
+        assert len(calls) == failed_call + 1
+        assert config.read_bytes() == original
+
+    def test_unset_refuses_external_drift(self, tool_installed, monkeypatch):
+        config = module.get_conda_config_path()
+
+        def fake_run(cmd):
+            config.write_text(
+                f'default_channels:\n  - {CONDA_MIRRORS["tuna"]}/pkgs/main\n',
+                encoding='utf-8',
+            )
+            return SimpleNamespace(returncode=0, stdout='', stderr='')
+
+        monkeypatch.setattr(module, '_run', fake_run)
+        success, msg = set_conda_mirror(CONDA_MIRRORS['tuna'])
+        assert success, msg
+
+        drifted = b'external-change: true\n'
+        config.write_bytes(drifted)
+        success, msg = unset_conda_mirror()
+
+        assert not success
+        assert '拒绝覆盖' in msg
+        assert config.read_bytes() == drifted
 
 
 class TestCliIntegration:
