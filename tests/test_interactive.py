@@ -172,6 +172,32 @@ class TestRunInteractiveSet:
         assert applied == ['uv', 'pdm']
         assert rolled_back == ['uv']
 
+    def test_adapter_exception_also_rolls_back_completed_tools(self, monkeypatch, capsys):
+        monkeypatch.setattr(module, 'scan_available_tools',
+                            lambda: [('uv', ''), ('pdm', '')])
+        monkeypatch.setattr(module, 'detect_environment', lambda: 'system')
+        monkeypatch.setattr('builtins.input', lambda prompt: '1 2')
+
+        def apply(tool, name, url, args):
+            if tool == 'uv':
+                return True
+            raise RuntimeError('adapter crashed')
+
+        monkeypatch.setattr(module, 'apply_mirror_to_tool', apply)
+        rolled_back = []
+        monkeypatch.setattr(
+            module,
+            'rollback_mirror_from_tool',
+            lambda tool, args: rolled_back.append(tool) or (True, 'ok'),
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            run_interactive_set(self._make_args(mirror='tuna'))
+
+        assert exc_info.value.code != 0
+        assert rolled_back == ['uv']
+        assert '未处理异常' in capsys.readouterr().out
+
 
 class TestCliTrigger:
     def test_tty_without_flags_enters_interactive(self, monkeypatch):
