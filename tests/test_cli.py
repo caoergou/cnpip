@@ -115,6 +115,91 @@ class TestUnsetUvCommand:
         assert exc_info.value.code == 0
 
 
+class TestDefaultCommand:
+    """cnpip 无子命令时默认执行 set。"""
+
+    def test_no_args_defaults_to_set(self, monkeypatch):
+        monkeypatch.setattr(sys, 'argv', ['cnpip'])
+        monkeypatch.setattr(sys.stdin, 'isatty', lambda: True)
+        monkeypatch.setattr(sys.stdout, 'isatty', lambda: True)
+
+        called = []
+        monkeypatch.setattr(module, 'run_interactive_set', lambda args: called.append(True) or sys.exit(0))
+        with pytest.raises(SystemExit):
+            main()
+        assert called
+
+    def test_mirror_name_without_command_defaults_to_set(self, monkeypatch):
+        monkeypatch.setattr(sys, 'argv', ['cnpip', 'tuna'])
+        monkeypatch.setattr(sys.stdin, 'isatty', lambda: False)
+        updated = []
+        monkeypatch.setattr(module, 'update_pip_config', lambda url, scope: updated.append(url))
+        main()
+        assert updated and 'tuna' in updated[0]
+
+    def test_flag_without_command_defaults_to_set(self, monkeypatch, fake_uv_config_path):
+        monkeypatch.setattr(sys, 'argv', ['cnpip', 'tuna', '--uv'])
+        monkeypatch.setattr(module, 'detect_uv_binary', lambda: '/usr/bin/uv')
+        main()
+        assert fake_uv_config_path.exists()
+
+
+class TestHelpText:
+    """help 输出全中文。"""
+
+    def test_help_flag_prints_chinese(self, monkeypatch, capsys):
+        monkeypatch.setattr(sys, 'argv', ['cnpip', '--help'])
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert '用法' in captured.out
+        assert '选项' in captured.out
+        assert '快速切换' in captured.out
+
+    def test_short_help_flag(self, monkeypatch, capsys):
+        monkeypatch.setattr(sys, 'argv', ['cnpip', '-h'])
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert '用法' in captured.out
+
+    def test_help_no_english_labels(self, monkeypatch, capsys):
+        monkeypatch.setattr(sys, 'argv', ['cnpip', '--help'])
+        with pytest.raises(SystemExit):
+            main()
+        captured = capsys.readouterr()
+        assert 'positional arguments' not in captured.out
+        assert 'optional arguments' not in captured.out
+        assert 'options:' not in captured.out.lower().split('选项')[0]
+
+
+class TestSyncCommand:
+    """update 重命名为 sync，update 作为别名保留。"""
+
+    def test_sync_calls_update_mirrors(self, monkeypatch, capsys):
+        monkeypatch.setattr(sys, 'argv', ['cnpip', 'sync'])
+        monkeypatch.setattr(module, 'update_mirrors_from_remote', lambda: (True, 'ok'))
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 0
+
+    def test_update_alias_still_works(self, monkeypatch, capsys):
+        monkeypatch.setattr(sys, 'argv', ['cnpip', 'update'])
+        monkeypatch.setattr(module, 'update_mirrors_from_remote', lambda: (True, 'ok'))
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 0
+
+    def test_help_shows_sync_not_update(self, monkeypatch, capsys):
+        monkeypatch.setattr(sys, 'argv', ['cnpip', '--help'])
+        with pytest.raises(SystemExit):
+            main()
+        captured = capsys.readouterr()
+        assert 'sync' in captured.out
+
+
 class TestListCommand:
     def test_list_prints_mirror_header(self, monkeypatch, capsys):
         monkeypatch.setattr(sys, 'argv', ['cnpip', 'list'])

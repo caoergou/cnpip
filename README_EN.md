@@ -13,13 +13,21 @@
 
 ```bash
 pip install cnpip
-cnpip set
+cnpip
 ```
+
+No arguments needed — just run `cnpip` and it benchmarks all mirrors then applies the fastest one.
 
 Or run via `uvx` without installing (automatically configures uv mirrors):
 
 ```bash
-uvx cnpip set
+uvx cnpip
+```
+
+You can also specify a mirror directly:
+
+```bash
+cnpip tuna          # equivalent to cnpip set tuna
 ```
 
 ## Features
@@ -69,8 +77,8 @@ huawei       Timeout             https://repo.huaweicloud.com/repository/pypi/si
 ### 2. Switch mirror
 
 ```bash
-cnpip set           # Auto-select the fastest mirror
-cnpip set tuna      # Manually specify a mirror
+cnpip               # Auto-select the fastest mirror (same as cnpip set)
+cnpip tuna          # Manually specify a mirror (same as cnpip set tuna)
 cnpip set -y        # Skip the prompt and use the default behavior
 ```
 
@@ -164,12 +172,12 @@ Notes:
 - **poetry**: Poetry has no global mirror setting; the source is written to the current project's `pyproject.toml` (source name: `cnpip`) — run from the project root
 - **conda**: Anaconda mirrors are a separate service from PyPI mirrors; currently `tuna`, `ustc`, `nju`, and `sustech` are supported, configuring `default_channels` plus the conda-forge / pytorch community channels
 
-### 6. Update mirror list
+### 6. Sync mirror list
 
 Fetch the latest mirror list (tries jsDelivr CDN first, then GitHub — no proxy needed in mainland China):
 
 ```bash
-cnpip update
+cnpip sync
 ```
 
 ## Configuration

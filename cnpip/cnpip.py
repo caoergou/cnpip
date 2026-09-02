@@ -851,24 +851,69 @@ def run_interactive_set(args):
     sys.exit(0 if all_ok else 1)
 
 
+_COMMANDS = frozenset({"list", "set", "unset", "info", "sync", "update"})
+
+_HELP_TEXT = """\
+cnpip - 快速切换 pip 镜像源
+
+用法:
+  cnpip                   测速并自动换源
+  cnpip <镜像源>          使用指定镜像（如 tuna, ustc, aliyun）
+  cnpip list              测速所有镜像
+  cnpip unset             恢复默认源
+  cnpip info              显示环境和配置信息
+  cnpip sync              更新镜像源列表
+
+选项:
+  --uv                    配置 uv
+  --pdm                   配置 pdm
+  --poetry                配置 poetry（当前项目）
+  --conda                 配置 conda
+  --user                  用户级配置
+  --global                系统级配置（需管理员权限）
+  --venv                  当前虚拟环境配置
+  -y, --yes               跳过交互
+  -h, --help              显示此帮助信息"""
+
+
+def _ensure_command():
+    """argv 中没有识别到子命令时，默认插入 'set'。"""
+    if len(sys.argv) < 2:
+        sys.argv.insert(1, 'set')
+        return
+    first = sys.argv[1]
+    if first in ('-h', '--help'):
+        return
+    if first not in _COMMANDS:
+        sys.argv.insert(1, 'set')
+
+
 def main():
     """主函数，解析命令行参数并执行相应操作"""
-    parser = argparse.ArgumentParser(description="轻松管理 pip 镜像源。")
-    parser.add_argument("command", choices=["list", "set", "unset", "info", "update"], help="要执行的命令")
-    parser.add_argument("mirror", nargs="?", help="要设置的镜像源名称 (仅用于 'set' 命令)")
+    _ensure_command()
+
+    if '-h' in sys.argv[1:] or '--help' in sys.argv[1:]:
+        print(_HELP_TEXT)
+        sys.exit(0)
+
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("command", choices=sorted(_COMMANDS))
+    parser.add_argument("mirror", nargs="?")
 
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--global", dest="global_", action="store_true", help="设置全局系统配置")
-    group.add_argument("--user", action="store_true", help="设置当前用户配置")
-    group.add_argument("--venv", "--site", dest="venv", action="store_true", help="设置当前虚拟环境配置")
-    group.add_argument("--uv", dest="uv", action="store_true", help="配置 uv 镜像源 (写入 uv.toml，不修改 pip)")
-    group.add_argument("--pdm", dest="pdm", action="store_true", help="配置 pdm 镜像源 (用户级 pdm config)")
-    group.add_argument("--poetry", dest="poetry", action="store_true", help="配置 poetry 镜像源 (当前项目 pyproject.toml)")
-    group.add_argument("--conda", dest="conda", action="store_true", help="配置 conda 镜像源 (写入 ~/.condarc)")
-    parser.add_argument("-y", "--yes", action="store_true",
-                        help="跳过交互式工具选择，直接使用默认行为")
+    group.add_argument("--global", dest="global_", action="store_true")
+    group.add_argument("--user", action="store_true")
+    group.add_argument("--venv", "--site", dest="venv", action="store_true")
+    group.add_argument("--uv", dest="uv", action="store_true")
+    group.add_argument("--pdm", dest="pdm", action="store_true")
+    group.add_argument("--poetry", dest="poetry", action="store_true")
+    group.add_argument("--conda", dest="conda", action="store_true")
+    parser.add_argument("-y", "--yes", action="store_true")
 
     args = parser.parse_args()
+
+    if args.command == 'update':
+        args.command = 'sync'
 
     if args.command == "list":
         list_mirrors()
@@ -975,7 +1020,7 @@ def main():
             sys.exit(0)
     elif args.command == "info":
         show_info()
-    elif args.command == "update":
+    elif args.command == "sync":
         print("正在从远程获取最新的镜像源列表...")
         success, msg = update_mirrors_from_remote()
         print(msg)
