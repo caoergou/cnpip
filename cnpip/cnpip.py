@@ -851,10 +851,27 @@ def run_interactive_set(args):
     sys.exit(0 if all_ok else 1)
 
 
+_COMMANDS = frozenset({"list", "set", "unset", "info", "update"})
+
+
+def _ensure_command():
+    """argv 中没有识别到子命令时，默认插入 'set'。"""
+    if len(sys.argv) < 2:
+        sys.argv.insert(1, 'set')
+        return
+    first = sys.argv[1]
+    if first in ('-h', '--help'):
+        return
+    if first not in _COMMANDS:
+        sys.argv.insert(1, 'set')
+
+
 def main():
     """主函数，解析命令行参数并执行相应操作"""
+    _ensure_command()
+
     parser = argparse.ArgumentParser(description="轻松管理 pip 镜像源。")
-    parser.add_argument("command", choices=["list", "set", "unset", "info", "update"], help="要执行的命令")
+    parser.add_argument("command", choices=sorted(_COMMANDS), help="要执行的命令")
     parser.add_argument("mirror", nargs="?", help="要设置的镜像源名称 (仅用于 'set' 命令)")
 
     group = parser.add_mutually_exclusive_group()

@@ -115,6 +115,35 @@ class TestUnsetUvCommand:
         assert exc_info.value.code == 0
 
 
+class TestDefaultCommand:
+    """cnpip 无子命令时默认执行 set。"""
+
+    def test_no_args_defaults_to_set(self, monkeypatch):
+        monkeypatch.setattr(sys, 'argv', ['cnpip'])
+        monkeypatch.setattr(sys.stdin, 'isatty', lambda: True)
+        monkeypatch.setattr(sys.stdout, 'isatty', lambda: True)
+
+        called = []
+        monkeypatch.setattr(module, 'run_interactive_set', lambda args: called.append(True) or sys.exit(0))
+        with pytest.raises(SystemExit):
+            main()
+        assert called
+
+    def test_mirror_name_without_command_defaults_to_set(self, monkeypatch):
+        monkeypatch.setattr(sys, 'argv', ['cnpip', 'tuna'])
+        monkeypatch.setattr(sys.stdin, 'isatty', lambda: False)
+        updated = []
+        monkeypatch.setattr(module, 'update_pip_config', lambda url, scope: updated.append(url))
+        main()
+        assert updated and 'tuna' in updated[0]
+
+    def test_flag_without_command_defaults_to_set(self, monkeypatch, fake_uv_config_path):
+        monkeypatch.setattr(sys, 'argv', ['cnpip', 'tuna', '--uv'])
+        monkeypatch.setattr(module, 'detect_uv_binary', lambda: '/usr/bin/uv')
+        main()
+        assert fake_uv_config_path.exists()
+
+
 class TestListCommand:
     def test_list_prints_mirror_header(self, monkeypatch, capsys):
         monkeypatch.setattr(sys, 'argv', ['cnpip', 'list'])
