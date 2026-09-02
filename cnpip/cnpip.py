@@ -858,10 +858,18 @@ def run_interactive_set(args):
     applied_tools = []
     for tool in selection:
         print(f"\n--- {tool} ---")
-        if not apply_mirror_to_tool(tool, mirror_name, mirror_url, args):
+        try:
+            applied = apply_mirror_to_tool(tool, mirror_name, mirror_url, args)
+        except Exception as exc:
+            print(f"配置 {tool} 时发生未处理异常: {exc}")
+            applied = False
+        if not applied:
             print("批量配置失败，正在回滚本次已完成的配置...")
             for applied_tool in reversed(applied_tools):
-                success, message = rollback_mirror_from_tool(applied_tool, args)
+                try:
+                    success, message = rollback_mirror_from_tool(applied_tool, args)
+                except Exception as exc:
+                    success, message = False, f"发生未处理异常: {exc}"
                 if not success:
                     print(f"回滚 {applied_tool} 失败: {message}")
             sys.exit(1)
