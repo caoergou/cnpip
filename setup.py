@@ -1,5 +1,7 @@
 from setuptools import setup, find_packages
 
+DEV_REQUIREMENTS = ["pytest>=7.0"]
+
 QUALITY_REQUIREMENTS = [
     "ruff==0.11.13",
     "pyright==1.1.405",
@@ -34,7 +36,7 @@ setup(
     ],
     install_requires=[],
     extras_require={
-        "dev": ["pytest>=7.0"],
+        "dev": DEV_REQUIREMENTS,
         "quality": QUALITY_REQUIREMENTS,
     },
 )

@@ -13,6 +13,7 @@ readme = "README.md"
 requires-python = ">=3.7"
 keywords = ["pip", "mirror", "Chinese", "speed", "cli", "uv"]
 dependencies = []
+dynamic = ["optional-dependencies"]
 classifiers = [
     "License :: OSI Approved :: MIT License",
     "Intended Audience :: Developers",
@@ -28,13 +29,6 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Installation/Setup",
     "Topic :: Utilities"
-]
-
-[project.optional-dependencies]
-dev = ["pytest>=7.0"]
-quality = [
-    "ruff==0.11.13",
-    "pyright==1.1.405",
 ]
 
 [tool.pytest.ini_options]
