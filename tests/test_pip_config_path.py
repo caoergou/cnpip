@@ -1,6 +1,5 @@
 """测试 get_pip_config_path_for_scope() 的跨平台路径逻辑。"""
 import platform
-import pytest
 from pathlib import Path
 
 import cnpip.cnpip as module

@@ -561,7 +561,7 @@ def update_pip_config(mirror_url, scope_args):
     scope_desc = get_scope_description(scope_args)
 
     if not is_pip_installed():
-        print(f"\n检测到当前环境未安装 pip（可能是 uvx 环境）。")
+        print("\n检测到当前环境未安装 pip（可能是 uvx 环境）。")
         if '--site' in scope_args:
             print("错误: --venv 在 uvx 临时环境中无意义，配置会随环境消失。")
             print("建议改用 --user 写入用户级 pip 配置，或 --uv 配置 uv 镜像源。")
@@ -600,7 +600,7 @@ def unset_pip_mirror(scope_args):
     scope_str = " ".join(scope_args) if scope_args else "auto"
 
     if not is_pip_installed():
-        print(f"\n检测到当前环境未安装 pip（可能是 uvx 环境）。")
+        print("\n检测到当前环境未安装 pip（可能是 uvx 环境）。")
         if '--venv' in scope_args:
             print("错误: --venv 在 uvx 临时环境中无意义。")
             return False
@@ -611,7 +611,7 @@ def unset_pip_mirror(scope_args):
             print(msg)
             return success
         else:
-            print(f"请复制以下命令在终端运行以取消配置:")
+            print("请复制以下命令在终端运行以取消配置:")
             print(f"pip config unset {scope_str} global.index-url")
             print(f"pip config unset {scope_str} global.trusted-host")
         return False

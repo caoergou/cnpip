@@ -1,5 +1,4 @@
 """测试 uv 配置文件的读写操作（不依赖 uv 命令）。"""
-import pytest
 
 from cnpip.cnpip import update_uv_config, unset_uv_config, get_uv_index_url
 
@@ -118,7 +117,6 @@ class TestUnsetUvConfig:
         before = fake_uv_config_path.read_bytes()
         success, msg = unset_uv_config()
         assert success
-        content = fake_uv_config_path.read_text(encoding='utf-8')
         assert fake_uv_config_path.read_bytes() == before
         assert '没有管理' in msg
 

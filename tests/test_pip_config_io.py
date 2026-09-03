@@ -1,6 +1,5 @@
 """测试直接读写 pip 配置文件（不依赖 pip 命令）。"""
 import configparser
-import pytest
 
 from cnpip.cnpip import write_pip_config_directly, unset_pip_config_directly
 

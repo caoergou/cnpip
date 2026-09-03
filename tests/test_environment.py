@@ -1,7 +1,5 @@
 """测试 detect_environment() 和 detect_windows_python_source() 的各种场景。"""
 import sys
-import platform
-import pytest
 
 from cnpip.cnpip import detect_environment, detect_windows_python_source, ENV_DESCRIPTIONS
 
