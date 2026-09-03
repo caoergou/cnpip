@@ -3,50 +3,122 @@
 [English](./README_EN.md)
 
 ![PyPI](https://img.shields.io/pypi/v/cnpip)
-![PyPI - Downloads](https://img.shields.io/pypi/dm/cnpip)
-![License](https://img.shields.io/github/license/caoergou/cnpip)
+![Python](https://img.shields.io/pypi/pyversions/cnpip)
 ![Tests](https://github.com/caoergou/cnpip/actions/workflows/test.yml/badge.svg)
+![Quality](https://github.com/caoergou/cnpip/actions/workflows/quality.yml/badge.svg)
+![License](https://img.shields.io/github/license/caoergou/cnpip)
 
-`cnpip` 是一个帮助你快速切换 `pip` 镜像源，提升 Python 包下载速度的命令行工具。
-它可以测试各镜像源的连接速度，**自动选择最快的镜像源**，并原生支持 `uv`、`pdm`、`poetry`、`conda` 等现代包管理工具。
+`cnpip` 是为中国网络环境准备的 Python 包管理镜像配置工具。它会测试可用镜像，并把选中的镜像写入你已经在使用的 `pip`、`uv`、`PDM`、`Poetry` 或 `Conda` 配置。
 
-## 快速使用
+它不提供代理、缓存或私有包仓库，也不会改变包管理器本身的解析规则。镜像是否更快取决于你所在的网络、镜像站状态和包的实际内容；`cnpip` 做的是把配置过程变得可观察、可恢复。
+
+## 30 秒开始
 
 ```bash
 pip install cnpip
 cnpip
 ```
 
-不需要记任何参数——直接运行 `cnpip` 就会测速并自动换源。
+在交互终端中，`cnpip` 会列出已检测到的包管理工具，默认选择 `pip`，测速后应用最快的可用 PyPI 镜像。
 
-或通过 `uvx` 临时运行（自动配置 uv 镜像源，无需安装）：
+已有明确选择时，可以直接指定镜像：
+
+```bash
+cnpip tuna                 # 等同于 cnpip set tuna
+cnpip set --uv             # 测速后只配置 uv
+cnpip set tuna --pdm       # 只为 PDM 配置清华镜像
+cnpip set --conda          # 对 Conda 专用镜像测速后配置 Conda
+```
+
+也可以不安装而临时运行：
 
 ```bash
 uvx cnpip
 ```
 
-也可以直接指定镜像源：
+在 `uvx` 环境中，默认目标是用户级 uv 配置，而不是短生命周期的临时环境。
+
+## 支持什么
+
+| 工具 | cnpip 的操作范围 | 配置位置 |
+| --- | --- | --- |
+| `pip` | 配置 PyPI `index-url`；可选用户、系统或虚拟环境作用域 | 由 `pip config` 和当前环境决定 |
+| `uv` | 添加或恢复名为 `cnpip` 的索引 | 用户级 `uv.toml` |
+| `PDM` | 设置或恢复 `pypi.url` | PDM 用户级配置 |
+| `Poetry` | 添加或移除名为 `cnpip` 的源 | 当前项目的 `pyproject.toml` |
+| `Conda` | 配置或恢复 `default_channels`、conda-forge 与 pytorch 社区源 | 用户级 `~/.condarc` |
+
+`Conda` 镜像和 PyPI 镜像是两套服务，因此它使用独立的镜像表；不是每个 PyPI 镜像都能用于 Conda。
+
+## 常用命令
+
+| 目的 | 命令 |
+| --- | --- |
+| 查看所有 PyPI 镜像的测速结果 | `cnpip list` |
+| 测速并自动设置 | `cnpip` 或 `cnpip set` |
+| 设置指定的 PyPI 镜像 | `cnpip tuna` 或 `cnpip set tuna` |
+| 只配置一个工具 | `cnpip set --uv`、`cnpip set --pdm`、`cnpip set --poetry`、`cnpip set --conda` |
+| 查看环境和实际配置文件 | `cnpip info` |
+| 恢复 cnpip 管理的配置 | `cnpip unset`，或追加 `--uv`、`--pdm`、`--poetry`、`--conda` |
+| 更新镜像清单 | `cnpip sync` |
+
+脚本、CI 等非交互环境会跳过工具选择；`-y`／`--yes` 也会跳过交互。显式指定 `--uv`、`--pdm`、`--poetry` 或 `--conda` 时，只会操作对应工具。
+
+## pip 的配置作用域
+
+未显式指定作用域时，`cnpip` 会根据环境选择。可用 `cnpip info` 查看最终使用的配置文件。
+
+| 当前环境 | 默认作用域 |
+| --- | --- |
+| `uvx` 临时工具环境 | 写入用户级 `uv.toml` |
+| uv 虚拟环境、Conda 环境或普通 venv | 当前环境的 `--site` 配置 |
+| 系统 Python 或 pipx | 用户级 `--user` 配置 |
+
+需要固定作用域时：
 
 ```bash
-cnpip tuna          # 等同于 cnpip set tuna
+cnpip set --user       # 用户级 pip 配置
+cnpip set --venv       # 当前虚拟环境的 pip 配置
+cnpip set --global     # 系统级 pip 配置，通常需要管理员权限
+
+cnpip unset --user     # 按记录恢复用户级 pip 配置
+cnpip unset --global   # 按记录恢复系统级 pip 配置
 ```
 
-## 功能
+Windows 商店版 Python 不能可靠地写系统级配置，建议使用 `--user`。其他 Windows 安装方式需要以管理员身份运行终端后，才能使用 `--global`。
 
-- **一键测速，自动换源**：并发测试全部镜像延迟，按速度排序，`cnpip set` 即完成切换
-- **面向真实包索引测速**：对 PEP 503 的 `pip` 项目页重复 GET，使用中位响应延迟，避免只测根路径或一次请求
-- **交互式多工具配置**：`cnpip set` 自动扫描已安装的包管理工具，一次选择、批量换源（`-y` 跳过交互）
-- **原生支持 uv**：uvx 环境下自动写入 `uv.toml`，也可通过 `--uv` 随时显式配置
-- **覆盖主流包管理生态**：`--pdm`、`--poetry`、`--conda` 一条命令配置对应工具的镜像源
-- **智能识别运行环境**：自动区分 uvx、conda、pipx、venv 等，精准选择配置作用域，无需手动指定
-- **精细的作用域控制**：`--user`（用户）、`--global`（系统）、`--venv`（虚拟环境）、`--uv`（uv 专用）
-- **全平台兼容**：支持 Linux、macOS 及 Windows 各种安装方式（官方包、商店版、pyenv-win、Scoop 等）
-- **内置诊断**：`cnpip info` 一条命令，查看环境类型、pip 配置文件路径与 uv 状态
+## 各工具的明确配置方式
 
-## 支持的镜像源
+```bash
+# pip 和 uv
+cnpip set tuna
+cnpip set tuna --uv
 
-| 名称 | 简写 | 地址 |
-|------|------|------|
+# PDM：写入用户级 `pdm config pypi.url`
+cnpip set tuna --pdm
+
+# Poetry：在项目根目录运行，写入当前项目的 pyproject.toml
+cnpip set tuna --poetry
+
+# Conda：仅从 Conda 支持的镜像中选择
+cnpip set --conda
+```
+
+`Poetry` 没有全局镜像源配置。如果 `cnpip set --poetry` 提示缺少 `pyproject.toml`，请先进入 Poetry 项目根目录。
+
+## 如何测速与恢复
+
+- PyPI 测速请求真实的 PEP 503 `simple/pip/` 页面；Conda 测速请求 `pkgs/main/noarch/repodata.json`。
+- 每个候选源连续请求三次，取中位响应时间；至少两次成功才会被视为可用。
+- 设置前会保存原始状态，并记录 cnpip 写入后的指纹。`unset` 只恢复由对应 cnpip 操作管理的配置。
+- 如果配置在设置后被其他程序或人工改动，`unset` 会拒绝覆盖，避免误删后续修改。
+- 配置文件采用同目录临时文件加原子替换。交互式批量设置中，后一个工具失败时会反向恢复此前成功的工具。
+- HTTPS 镜像不会写入 `trusted-host`；这个 pip 选项会跳过 TLS 校验，只有 HTTP 镜像才可能需要它。
+
+## 镜像清单
+
+| 名称 | 简写 | PyPI 地址 |
+| --- | --- | --- |
 | 清华大学 TUNA | `tuna` | https://pypi.tuna.tsinghua.edu.cn/simple |
 | 中国科学技术大学 USTC | `ustc` | https://pypi.mirrors.ustc.edu.cn/simple |
 | 阿里云 Aliyun | `aliyun` | https://mirrors.aliyun.com/pypi/simple |
@@ -54,186 +126,24 @@ cnpip tuna          # 等同于 cnpip set tuna
 | 华为 Huawei | `huawei` | https://repo.huaweicloud.com/repository/pypi/simple |
 | 西湖大学 Westlake | `westlake` | https://mirrors.westlake.edu.cn/pypi/simple |
 | 南方科技大学 SUSTech | `sustech` | https://mirrors.sustech.edu.cn/pypi/web/simple |
-| 默认源 PyPI | `default` | https://pypi.org/simple |
+| 官方 PyPI | `default` | https://pypi.org/simple |
 
-## 使用方法
+使用 `cnpip sync` 可以获取更新后的镜像清单。远程条目可以新增镜像，但必须是合法名称、HTTPS、无凭据／端口／查询参数的 PEP 503 地址；不合规条目不会写入本地配置。
 
-### 1. 列出所有可用的镜像源并测速
+## 排错
 
-```bash
-cnpip list
-```
+### `cnpip unset` 拒绝恢复
 
-示例输出：
+这表示 cnpip 检测到配置在它设置后发生了变化。先人工确认当前配置和需要保留的改动，再决定是否手动恢复；不要强制覆盖未知修改。
 
-```
-镜像名称      响应延迟/状态        地址
------------------------------------------------------------------------------------
-ustc         135.71 ms           https://pypi.mirrors.ustc.edu.cn/simple
-aliyun       300.77 ms           https://mirrors.aliyun.com/pypi/simple
-tuna         499.51 ms           https://pypi.tuna.tsinghua.edu.cn/simple
-default      1252.75 ms          https://pypi.org/simple
-huawei       Timeout             https://repo.huaweicloud.com/repository/pypi/simple
-```
+### `--global` 失败
 
-### 2. 切换镜像源
+- Linux／macOS：使用 `sudo cnpip set --global`。
+- Windows：以管理员身份运行 PowerShell 或命令提示符；商店版 Python 请改用 `--user`。
 
-```bash
-cnpip               # 测速并自动选择最快镜像源（等同 cnpip set）
-cnpip tuna          # 手动指定镜像源（等同 cnpip set tuna）
-cnpip set -y        # 跳过交互，直接使用默认行为（等同旧版）
-```
+### `uvx cnpip` 的设置会不会消失
 
-在终端中运行时，`cnpip set` 会先扫描已安装的包管理工具，让你选择要配置哪些：
-
-```
-检测到以下包管理工具:
-
-  1. pip      当前源: 默认
-  2. uv       当前源: 默认
-  3. conda    用户级 (~/.condarc)
-
-请选择要配置的工具（编号，空格分隔多个；a=全部；回车=1 即 pip）:
-```
-
-脚本 / CI 等非终端环境、显式指定 `--uv` 等 flag、或使用 `-y` 时跳过交互；交互式批量配置任一工具失败时会回滚本次已完成的配置。
-
-**默认配置作用域（自动检测）：**
-
-| 当前环境 | 自动选择的作用域 |
-|----------|-----------------|
-| uvx 临时工具环境 | 写入 `~/.config/uv/uv.toml` |
-| uv 虚拟环境 / conda / venv | `--site`（虚拟环境级） |
-| 系统环境 / pipx | `--user`（用户级） |
-
-**显式指定作用域：**
-
-```bash
-cnpip set --user    # 用户级配置（~/.config/pip/pip.conf）
-cnpip set --global  # 系统全局配置（需要管理员权限）
-cnpip set --venv    # 当前虚拟环境配置
-cnpip set --uv      # 写入 uv 配置（~/.config/uv/uv.toml）
-```
-
-### 3. 恢复 cnpip 的配置
-
-```bash
-cnpip unset         # 恢复 cnpip 修改前的 pip 配置
-cnpip unset --uv    # 恢复 cnpip 修改前的 uv 配置
-```
-
-同样支持指定 pip 作用域：
-
-```bash
-cnpip unset --user    # 恢复用户级配置
-cnpip unset --global  # 恢复系统级配置
-```
-
-### 4. 诊断与信息
-
-```bash
-cnpip info
-```
-
-示例输出：
-
-```
-cnpip 版本: v1.6.0
-Python 路径: /usr/bin/python3
-操作系统: Linux 5.15.0
-Pip 版本: pip 24.0 from ...
-环境类型: 系统环境
-
---- 当前 Pip 配置 ---
-当前镜像源: https://pypi.tuna.tsinghua.edu.cn/simple
-信任主机: pypi.tuna.tsinghua.edu.cn
-配置文件路径:
-  /home/user/.config/pip/pip.conf
-
---- uv 信息 ---
-uv 版本: uv 0.5.0
-uv 配置文件: /home/user/.config/uv/uv.toml
-uv 镜像源: https://pypi.tuna.tsinghua.edu.cn/simple
-```
-
-### 5. 配置 pdm / poetry / conda 镜像源
-
-```bash
-cnpip set --pdm            # 测速并配置 pdm（用户级 pdm config）
-cnpip set tuna --poetry    # 配置当前 poetry 项目使用清华镜像（写入 pyproject.toml）
-cnpip set --conda          # 测速并配置 conda（写入 ~/.condarc）
-
-cnpip unset --pdm          # 恢复 cnpip 修改前的配置
-cnpip unset --poetry
-cnpip unset --conda
-```
-
-说明：
-
-- **pdm**：写入用户级配置（`pdm config pypi.url`），对所有项目生效
-- **poetry**：poetry 不支持全局镜像，配置写入当前项目的 `pyproject.toml`（source 名称为 `cnpip`），请在项目根目录下运行
-- **conda**：anaconda 镜像与 PyPI 镜像是不同的服务，目前支持 `tuna`、`ustc`、`nju`、`sustech` 四个源，会配置 `default_channels` 及 conda-forge / pytorch 社区源
-
-### 6. 更新镜像源列表
-
-获取最新的镜像源列表（依次尝试 jsDelivr CDN 与 GitHub，无需科学上网）。远程清单允许新增镜像，但只接受合法名称、HTTPS、无凭据/端口/查询参数的 PEP 503 地址：
-
-```bash
-cnpip sync
-```
-
-## 配置文件
-
-`cnpip` 会根据当前环境自动选择修改哪个配置文件，通过 `cnpip info` 可查看实际生效的路径。
-
-- **pip 配置**：只修改 `global.index-url`，不影响其他配置项；`global.trusted-host` 仅在镜像为 http 协议时写入（trusted-host 会跳过 TLS 校验，https 镜像无需也不应设置）
-- **uv 配置**：写入带 `name = "cnpip"` 的 `[[index]]` 块到 `uv.toml`，保留其他 index
-- **pdm 配置**：通过 `pdm config` 写入用户级 `config.toml`
-- **poetry 配置**：通过 `poetry source add` 写入当前项目 `pyproject.toml`
-- **conda 配置**：通过 `conda config --prepend/--set` 写入 `~/.condarc`，保留已有 default channel
-
-## 安全与恢复
-
-- 每次设置前，cnpip 会记录目标配置的完整修改前内容，并将修改后的指纹写入 `~/.cnpip/state.json`。在 Linux/macOS 上状态目录和文件分别使用 700/600 权限；Windows 使用用户目录的默认 ACL 保护状态文件。
-- `unset` 只恢复由当前 cnpip 操作管理的配置；如果文件或配置值在设置后被其他程序改过，cnpip 会拒绝覆盖并返回非零退出码。
-- 文件写入采用同目录临时文件加原子替换，避免进程中断留下截断配置。交互式一次配置多个工具时，后续工具失败会反向恢复已成功的工具。
-- `cnpip sync` 会校验远程清单，非法地址不会写入用户配置；pip 测速使用真实 `simple/pip/` 页面，conda 测速使用 `pkgs/main/noarch/repodata.json`，均连续三次请求取中位数，至少两次成功才认为镜像可用。
-
-## 常见问题
-
-### 1. 如何恢复 cnpip 修改前的配置？
-
-```bash
-cnpip unset        # 恢复 pip 修改前的配置
-cnpip unset --uv   # 恢复 uv 修改前的配置
-```
-
-如果配置文件已经被手动修改，cnpip 会提示检测到漂移并拒绝覆盖；请先人工确认差异，再决定是否恢复。
-
-### 2. 在 uvx 环境中使用时配置会持久化吗？
-
-会。通过 `uvx cnpip set` 运行时，cnpip 检测到 uvx 环境后会自动写入 `~/.config/uv/uv.toml`（Windows 为 `%APPDATA%\uv\uv.toml`），对所有 uv 操作永久生效，不会随临时环境消失。
-
-### 3. 为什么 `--global` 设置失败？
-
-- **Linux / macOS**：需要 sudo 权限，请运行 `sudo cnpip set --global`
-- **Windows 商店版 Python**：受沙盒限制，建议改用 `cnpip set --user`
-- **其他 Windows**：请以管理员身份运行 PowerShell 后重试
-
-### 4. 如何单独配置 uv 的镜像源？
-
-```bash
-cnpip set --uv tuna    # 配置 uv 使用清华镜像
-cnpip set --uv         # 测速并自动选择最快镜像写入 uv
-```
-
-### 5. 为什么 `--conda` 支持的镜像源比 pip 少？
-
-anaconda 镜像与 PyPI 镜像是两套独立的服务，并非所有提供 PyPI 镜像的站点都同步提供 anaconda 镜像（例如阿里云已下线 anaconda 镜像）。cnpip 只收录经过实测可用的 conda 镜像源。
-
-### 6. `cnpip set --poetry` 为什么提示需要 pyproject.toml？
-
-poetry 不支持全局镜像配置，镜像源只能写入具体项目的 `pyproject.toml`。请先 `cd` 到 poetry 项目根目录再运行。
+不会。cnpip 会写入用户级 uv 配置：Linux／macOS 通常是 `~/.config/uv/uv.toml`，Windows 通常是 `%APPDATA%\\uv\\uv.toml`。
 
 ## 许可证
 
