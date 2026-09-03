@@ -1,5 +1,10 @@
 from setuptools import setup, find_packages
 
+QUALITY_REQUIREMENTS = [
+    "ruff==0.11.13",
+    "pyright==1.1.405",
+]
+
 setup(
     name="cnpip",
     version="1.6.0",
@@ -28,4 +33,8 @@ setup(
         "Topic :: Utilities",
     ],
     install_requires=[],
+    extras_require={
+        "dev": ["pytest>=7.0"],
+        "quality": QUALITY_REQUIREMENTS,
+    },
 )

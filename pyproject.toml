@@ -32,6 +32,10 @@ classifiers = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
+quality = [
+    "ruff==0.11.13",
+    "pyright==1.1.405",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -39,6 +43,14 @@ addopts = "-v"
 markers = [
     "real_cli: tests that execute real third-party CLI tools in an isolated environment",
 ]
+
+[tool.ruff]
+target-version = "py37"
+
+[tool.pyright]
+include = ["cnpip"]
+pythonVersion = "3.7"
+typeCheckingMode = "basic"
 
 [project.urls]
 Homepage = "https://github.com/caoergou/cnpip"
