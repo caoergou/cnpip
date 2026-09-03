@@ -172,6 +172,31 @@ class TestRunInteractiveSet:
         assert applied == ['uv', 'pdm']
         assert rolled_back == ['uv']
 
+    def test_failed_batch_rolls_back_pip_without_unpack_error(self, monkeypatch, capsys):
+        monkeypatch.setattr(module, 'scan_available_tools',
+                            lambda: [('pip', ''), ('uv', '')])
+        monkeypatch.setattr(module, 'detect_environment', lambda: 'system')
+        monkeypatch.setattr('builtins.input', lambda prompt: '1 2')
+
+        monkeypatch.setattr(
+            module,
+            'apply_mirror_to_tool',
+            lambda tool, name, url, args: tool == 'pip',
+        )
+        rolled_back_scopes = []
+        monkeypatch.setattr(
+            module,
+            'unset_pip_mirror',
+            lambda scope_args: rolled_back_scopes.append(scope_args) or True,
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            run_interactive_set(self._make_args(mirror='tuna'))
+
+        assert exc_info.value.code != 0
+        assert rolled_back_scopes == [['--user']]
+        assert '回滚 pip 失败' not in capsys.readouterr().out
+
     def test_adapter_exception_also_rolls_back_completed_tools(self, monkeypatch, capsys):
         monkeypatch.setattr(module, 'scan_available_tools',
                             lambda: [('uv', ''), ('pdm', '')])

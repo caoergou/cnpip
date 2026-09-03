@@ -880,7 +880,8 @@ def run_interactive_set(args):
 def rollback_mirror_from_tool(tool, args):
     """回滚交互式批量 set 中已经成功的单个工具。"""
     if tool == 'pip':
-        return unset_pip_mirror(get_scope_args(args))
+        success = unset_pip_mirror(get_scope_args(args))
+        return success, None if success else "恢复 pip 镜像源失败"
     if tool == 'uv':
         return unset_uv_config()
     if tool == 'pdm':
