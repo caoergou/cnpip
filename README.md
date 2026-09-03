@@ -46,7 +46,7 @@ uvx cnpip
 | `uv` | 添加或恢复名为 `cnpip` 的索引 | 用户级 `uv.toml` |
 | `PDM` | 设置或恢复 `pypi.url` | PDM 用户级配置 |
 | `Poetry` | 添加或移除名为 `cnpip` 的源 | 当前项目的 `pyproject.toml` |
-| `Conda` | 配置或恢复 `default_channels`、conda-forge 与 pytorch 社区源 | 用户级 `~/.condarc` |
+| `Conda` | 配置或恢复 `default_channels`、conda-forge 与 pytorch 社区源 | `CONDARC` 指定的文件，默认 `~/.condarc` |
 
 `Conda` 镜像和 PyPI 镜像是两套服务，因此它使用独立的镜像表；不是每个 PyPI 镜像都能用于 Conda。
 
@@ -64,17 +64,17 @@ uvx cnpip
 
 脚本、CI 等非交互环境会跳过工具选择；`-y`／`--yes` 也会跳过交互。显式指定 `--uv`、`--pdm`、`--poetry` 或 `--conda` 时，只会操作对应工具。
 
-## pip 的配置作用域
+## 默认配置目标
 
-未显式指定作用域时，`cnpip` 会根据环境选择。可用 `cnpip info` 查看最终使用的配置文件。
+未显式指定工具或 pip 作用域时，`cnpip` 会根据环境选择默认目标。可用 `cnpip info` 查看最终使用的配置文件。
 
-| 当前环境 | 默认作用域 |
+| 当前环境 | 默认目标 |
 | --- | --- |
-| `uvx` 临时工具环境 | 写入用户级 `uv.toml` |
-| uv 虚拟环境、Conda 环境或普通 venv | 当前环境的 `--site` 配置 |
-| 系统 Python 或 pipx | 用户级 `--user` 配置 |
+| `uvx` 临时工具环境 | 用户级 `uv.toml`（uv） |
+| uv 虚拟环境、Conda 环境或普通 venv | 当前环境的 pip `--site` 配置 |
+| 系统 Python 或 pipx | 用户级 pip `--user` 配置 |
 
-需要固定作用域时：
+需要固定 pip 作用域时：
 
 ```bash
 cnpip set --user       # 用户级 pip 配置
@@ -110,9 +110,9 @@ cnpip set --conda
 
 - PyPI 测速请求真实的 PEP 503 `simple/pip/` 页面；Conda 测速请求 `pkgs/main/noarch/repodata.json`。
 - 每个候选源连续请求三次，取中位响应时间；至少两次成功才会被视为可用。
-- 设置前会保存原始状态，并记录 cnpip 写入后的指纹。`unset` 只恢复由对应 cnpip 操作管理的配置。
+- 对 pip、uv、Poetry 和 Conda，cnpip 会记录目标文件的原始状态及修改后的指纹；PDM 则记录 `pypi.url` 的修改前后值。`unset` 只恢复由对应 cnpip 操作管理的配置。
 - 如果配置在设置后被其他程序或人工改动，`unset` 会拒绝覆盖，避免误删后续修改。
-- 配置文件采用同目录临时文件加原子替换。交互式批量设置中，后一个工具失败时会反向恢复此前成功的工具。
+- cnpip 直接写入 pip 和 uv 配置时采用同目录临时文件加原子替换；PDM、Poetry 和 Conda 通过各自的 CLI 配置。交互式批量设置中，后一个工具失败时会尝试反向恢复此前成功的工具，并报告无法恢复的工具。
 - HTTPS 镜像不会写入 `trusted-host`；这个 pip 选项会跳过 TLS 校验，只有 HTTP 镜像才可能需要它。
 
 ## 镜像清单

@@ -46,7 +46,7 @@ In a `uvx` environment, the default target is the user-level uv configuration, n
 | `uv` | A named `cnpip` index | User-level `uv.toml` |
 | `PDM` | `pypi.url` | PDM user configuration |
 | `Poetry` | A named `cnpip` source | The current project's `pyproject.toml` |
-| `conda` | `default_channels` plus conda-forge and pytorch community channels | User-level `~/.condarc` |
+| `conda` | `default_channels` plus conda-forge and pytorch community channels | The file set by `CONDARC`, or `~/.condarc` by default |
 
 Conda and PyPI mirrors are separate services, so cnpip keeps a separate conda mirror table. A PyPI mirror is not necessarily usable for conda.
 
@@ -64,17 +64,17 @@ Conda and PyPI mirrors are separate services, so cnpip keeps a separate conda mi
 
 Scripts and CI skip the interactive tool picker. `-y` / `--yes` also skips it. An explicit `--uv`, `--pdm`, `--poetry`, or `--conda` flag limits the operation to that tool.
 
-## pip scopes
+## Default targets
 
-Without an explicit scope, cnpip chooses one from the environment. Run `cnpip info` to see the file that is actually in use.
+Without an explicit tool or pip scope, cnpip chooses a default target from the environment. Run `cnpip info` to see the file that is actually in use.
 
 | Environment | Default target |
 | --- | --- |
-| `uvx` temporary tool environment | User-level `uv.toml` |
-| uv virtual environment, conda environment, or regular venv | Environment-level `--site` config |
-| System Python or pipx | User-level `--user` config |
+| `uvx` temporary tool environment | User-level `uv.toml` (uv) |
+| uv virtual environment, conda environment, or regular venv | Environment-level pip `--site` config |
+| System Python or pipx | User-level pip `--user` config |
 
-Choose a fixed scope when needed:
+Choose a fixed pip scope when needed:
 
 ```bash
 cnpip set --user       # User-level pip config
@@ -110,9 +110,9 @@ Poetry has no global mirror-source configuration. If `cnpip set --poetry` report
 
 - PyPI probes use the real PEP 503 `simple/pip/` page; conda probes use `pkgs/main/noarch/repodata.json`.
 - Each candidate is requested three times. cnpip uses the median response time and requires at least two successes.
-- Before a change, cnpip saves the original state and records the fingerprint of the value it wrote. `unset` restores only configuration managed by that cnpip operation.
+- For pip, uv, Poetry, and conda, cnpip records the target file's original state and its post-change fingerprint. For PDM, it records the before and after values of `pypi.url`. `unset` restores only configuration managed by that cnpip operation.
 - If another program or a manual edit changed the target afterwards, `unset` refuses to overwrite it.
-- File updates use a same-directory temporary file followed by an atomic replacement. In an interactive batch, a later failure rolls back tools already configured in that batch.
+- When cnpip writes pip or uv configuration directly, it uses a same-directory temporary file followed by an atomic replacement. PDM, Poetry, and conda configuration is delegated to their own CLIs. In an interactive batch, a later failure attempts to roll back tools already configured and reports any tool it could not restore.
 - HTTPS mirrors do not get `trusted-host`; that pip setting bypasses TLS verification and is only relevant to HTTP mirrors.
 
 ## Mirror catalog
