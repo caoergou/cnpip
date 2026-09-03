@@ -92,7 +92,7 @@ def set_pdm_mirror(mirror_url):
     success, error = record_managed_value("pdm:user", before, after)
     if not success:
         rollback_ok, rollback_error = _rollback_pdm_value(pdm, before)
-        message = error
+        message = error or "记录 pdm 镜像源的配置所有权失败"
         if not rollback_ok:
             message += f"；回滚失败: {rollback_error}"
         return False, message
@@ -115,7 +115,7 @@ def unset_pdm_mirror():
     success, error = forget_managed_value("pdm:user")
     if not success:
         rollback_ok, rollback_error = _rollback_pdm_value(pdm, current)
-        message = error
+        message = error or "清理 pdm 镜像源的配置所有权失败"
         if not rollback_ok:
             message += f"；回滚失败: {rollback_error}"
         return False, message
