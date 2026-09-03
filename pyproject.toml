@@ -8,10 +8,10 @@ version = "1.6.0"
 authors = [
     { name = "caoergou", email = "mrjingcheng@foxmail.com" },
 ]
-description = "帮助中国用户快速切换 pip 镜像源，提升下载速度的命令行工具。"
+description = "面向中国网络环境的 Python 包管理镜像配置命令行工具，支持 pip、uv、PDM、Poetry 和 Conda。"
 readme = "README.md"
 requires-python = ">=3.7"
-keywords = ["pip", "mirror", "Chinese", "speed", "cli", "uv"]
+keywords = ["pip", "uv", "pdm", "poetry", "conda", "mirror", "china", "cli"]
 dependencies = []
 dynamic = ["optional-dependencies"]
 classifiers = [

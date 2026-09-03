@@ -962,7 +962,7 @@ def rollback_mirror_from_tool(tool, args):
 _COMMANDS = frozenset({"list", "set", "unset", "info", "sync", "update"})
 
 _HELP_TEXT = """\
-cnpip - 快速切换 pip 镜像源
+cnpip - 配置 Python 包管理镜像源
 
 用法:
   cnpip                   测速并自动换源
