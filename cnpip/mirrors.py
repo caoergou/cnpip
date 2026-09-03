@@ -17,10 +17,10 @@ DEFAULT_MIRRORS = {
     "huawei": "https://repo.huaweicloud.com/repository/pypi/simple",
     "westlake": "https://mirrors.westlake.edu.cn/pypi/simple",
     "sustech": "https://mirrors.sustech.edu.cn/pypi/web/simple",
-    "default": "https://pypi.org/simple"
+    "default": "https://pypi.org/simple",
 }
 
-_MIRROR_NAME_RE = r'^[a-z0-9][a-z0-9_-]{0,31}$'
+_MIRROR_NAME_RE = r"^[a-z0-9][a-z0-9_-]{0,31}$"
 # 按顺序尝试：jsDelivr CDN 在中国大陆可达，raw.githubusercontent.com 作为最终兜底
 REMOTE_MIRRORS_URLS = [
     "https://cdn.jsdelivr.net/gh/caoergou/cnpip@main/cnpip/mirrors.json",
@@ -51,21 +51,30 @@ def _validate_mirrors(data, strict_remote=False):
             port = parsed.port
         except ValueError as exc:
             raise ValueError(f"镜像地址无效: {name}: {exc}")
-        if ((parsed.scheme != 'https') if strict_remote
-                else parsed.scheme not in ('http', 'https')):
+        if (
+            (parsed.scheme != "https")
+            if strict_remote
+            else parsed.scheme not in ("http", "https")
+        ):
             raise ValueError(f"镜像必须使用 HTTPS: {name}")
         if any(char.isspace() or ord(char) < 32 for char in url):
             raise ValueError(f"镜像地址包含非法空白字符: {name}")
         if not hostname or parsed.username or parsed.password or port is not None:
             raise ValueError(f"镜像地址不得包含凭据或端口: {name}")
-        if (parsed.params or parsed.query or parsed.fragment
-                or not parsed.path.rstrip('/').endswith('/simple')):
+        if (
+            parsed.params
+            or parsed.query
+            or parsed.fragment
+            or not parsed.path.rstrip("/").endswith("/simple")
+        ):
             raise ValueError(f"镜像地址必须是 PEP 503 simple 路径: {name}")
-    return {name: url.rstrip('/') for name, url in data.items()}
+    return {name: url.rstrip("/") for name, url in data.items()}
+
 
 def get_local_mirrors_file():
     """返回打包的 mirrors.json 路径"""
-    return os.path.join(os.path.dirname(__file__), 'mirrors.json')
+    return os.path.join(os.path.dirname(__file__), "mirrors.json")
+
 
 def load_mirrors():
     """
@@ -77,22 +86,23 @@ def load_mirrors():
     # 1. 用户配置
     if USER_MIRRORS_FILE.exists():
         try:
-            with open(USER_MIRRORS_FILE, 'r', encoding='utf-8') as f:
+            with open(USER_MIRRORS_FILE, "r", encoding="utf-8") as f:
                 return _validate_mirrors(json.load(f))
         except Exception:
-            pass # 失败则后备
+            pass  # 失败则后备
 
     # 2. 包内配置
     pkg_file = get_local_mirrors_file()
     if os.path.exists(pkg_file):
         try:
-            with open(pkg_file, 'r', encoding='utf-8') as f:
+            with open(pkg_file, "r", encoding="utf-8") as f:
                 return _validate_mirrors(json.load(f))
         except Exception:
             pass
 
     # 3. 硬编码
     return _validate_mirrors(DEFAULT_MIRRORS.copy())
+
 
 def _fetch_mirrors_json(url, timeout=5):
     """从单个 URL 获取并解析 mirrors.json，失败抛出异常。"""
@@ -102,7 +112,7 @@ def _fetch_mirrors_json(url, timeout=5):
         raw = response.read(64 * 1024 + 1)
         if len(raw) > 64 * 1024:
             raise ValueError("远程镜像清单过大")
-        data = json.loads(raw.decode('utf-8'))
+        data = json.loads(raw.decode("utf-8"))
         return _validate_mirrors(data, strict_remote=True)
 
 
@@ -135,6 +145,7 @@ def update_mirrors_from_remote():
 
     detail = "\n".join(f"  - {e}" for e in errors)
     return False, f"所有远程地址均获取失败:\n{detail}"
+
 
 # 初始化 MIRRORS 以兼容旧代码
 # 但建议调用者直接使用 load_mirrors()

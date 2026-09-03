@@ -67,7 +67,9 @@ def _load_state():
         raise ValueError(f"cnpip 状态文件格式无效: {STATE_FILE}")
     if data.get("version") != STATE_VERSION:
         raise ValueError(f"不支持的 cnpip 状态版本: {data.get('version')}")
-    if not isinstance(data.get("files"), dict) or not isinstance(data.get("values"), dict):
+    if not isinstance(data.get("files"), dict) or not isinstance(
+        data.get("values"), dict
+    ):
         raise ValueError(f"cnpip 状态文件格式无效: {STATE_FILE}")
     return data
 

@@ -5,6 +5,7 @@
 - 不修改真实配置文件（mock get_pip_config_path_for_scope 和 get_uv_config_path）
 - 覆盖 info、set（指定镜像）、set --uv、unset --uv 命令
 """
+
 import sys
 import pytest
 
@@ -12,70 +13,71 @@ import cnpip.cnpip as module
 from cnpip.cnpip import main
 from cnpip.mirrors import MIRRORS
 
-MIRROR_URL = MIRRORS['tuna']
+MIRROR_URL = MIRRORS["tuna"]
 REAL_MEASURE_MIRROR_SPEED = module.measure_mirror_speed
 
 
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
     """所有 CLI 测试都屏蔽真实网络请求。"""
+
     def _fake_speed(name, url):
         return name, 100.0, url, None
 
-    monkeypatch.setattr(module, 'measure_mirror_speed', _fake_speed)
+    monkeypatch.setattr(module, "measure_mirror_speed", _fake_speed)
 
 
 class TestInfoCommand:
     def test_info_prints_version(self, capsys):
         monkeypatch = pytest.MonkeyPatch()
-        monkeypatch.setattr(sys, 'argv', ['cnpip', 'info'])
+        monkeypatch.setattr(sys, "argv", ["cnpip", "info"])
         main()
         captured = capsys.readouterr()
-        assert 'cnpip' in captured.out.lower()
+        assert "cnpip" in captured.out.lower()
         monkeypatch.undo()
 
     def test_info_prints_python_path(self, monkeypatch, capsys):
-        monkeypatch.setattr(sys, 'argv', ['cnpip', 'info'])
+        monkeypatch.setattr(sys, "argv", ["cnpip", "info"])
         main()
         captured = capsys.readouterr()
-        assert 'Python' in captured.out
+        assert "Python" in captured.out
 
     def test_info_prints_env_type(self, monkeypatch, capsys):
-        monkeypatch.setattr(sys, 'argv', ['cnpip', 'info'])
+        monkeypatch.setattr(sys, "argv", ["cnpip", "info"])
         main()
         captured = capsys.readouterr()
-        assert '环境类型' in captured.out
+        assert "环境类型" in captured.out
 
     def test_info_prints_pip_section(self, monkeypatch, capsys):
-        monkeypatch.setattr(sys, 'argv', ['cnpip', 'info'])
+        monkeypatch.setattr(sys, "argv", ["cnpip", "info"])
         main()
         captured = capsys.readouterr()
-        assert 'Pip' in captured.out
+        assert "Pip" in captured.out
 
     def test_info_prints_uv_section(self, monkeypatch, capsys):
-        monkeypatch.setattr(sys, 'argv', ['cnpip', 'info'])
+        monkeypatch.setattr(sys, "argv", ["cnpip", "info"])
         main()
         captured = capsys.readouterr()
-        assert 'uv' in captured.out.lower()
+        assert "uv" in captured.out.lower()
 
 
 class TestSetUvCommand:
     def test_set_uv_writes_config(self, monkeypatch, fake_uv_config_path, capsys):
         # mirror 位置参数必须在 --uv flag 前面（或后面均可，但前面更安全）
-        monkeypatch.setattr(sys, 'argv', ['cnpip', 'set', 'tuna', '--uv'])
+        monkeypatch.setattr(sys, "argv", ["cnpip", "set", "tuna", "--uv"])
         # 模拟 uv 已安装
-        monkeypatch.setattr(module, 'detect_uv_binary', lambda: '/usr/bin/uv')
+        monkeypatch.setattr(module, "detect_uv_binary", lambda: "/usr/bin/uv")
 
         # 成功时 main() 直接返回（不调用 sys.exit）
         main()
 
         assert fake_uv_config_path.exists()
-        content = fake_uv_config_path.read_text(encoding='utf-8')
+        content = fake_uv_config_path.read_text(encoding="utf-8")
         assert MIRROR_URL in content
 
     def test_set_uv_fails_gracefully_when_no_uv(self, monkeypatch, capsys):
-        monkeypatch.setattr(sys, 'argv', ['cnpip', 'set', 'tuna', '--uv'])
-        monkeypatch.setattr(module, 'detect_uv_binary', lambda: None)
+        monkeypatch.setattr(sys, "argv", ["cnpip", "set", "tuna", "--uv"])
+        monkeypatch.setattr(module, "detect_uv_binary", lambda: None)
 
         with pytest.raises(SystemExit) as exc_info:
             main()
@@ -83,11 +85,11 @@ class TestSetUvCommand:
         captured = capsys.readouterr()
         # 错误信息在 stdout 或 stderr 中
         combined = (captured.out + captured.err).lower()
-        assert 'uv' in combined
+        assert "uv" in combined
 
     def test_set_uv_invalid_mirror(self, monkeypatch, capsys):
-        monkeypatch.setattr(sys, 'argv', ['cnpip', 'set', 'nonexistent_mirror', '--uv'])
-        monkeypatch.setattr(module, 'detect_uv_binary', lambda: '/usr/bin/uv')
+        monkeypatch.setattr(sys, "argv", ["cnpip", "set", "nonexistent_mirror", "--uv"])
+        monkeypatch.setattr(module, "detect_uv_binary", lambda: "/usr/bin/uv")
 
         with pytest.raises(SystemExit) as exc_info:
             main()
@@ -99,17 +101,18 @@ class TestUnsetUvCommand:
         # 先写入配置
         fake_uv_config_path.parent.mkdir(parents=True, exist_ok=True)
         fake_uv_config_path.write_text(
-            '[[index]]\nurl = "https://example.com"\ndefault = true\n',
-            encoding='utf-8'
+            '[[index]]\nurl = "https://example.com"\ndefault = true\n', encoding="utf-8"
         )
-        monkeypatch.setattr(sys, 'argv', ['cnpip', 'unset', '--uv'])
+        monkeypatch.setattr(sys, "argv", ["cnpip", "unset", "--uv"])
 
         with pytest.raises(SystemExit) as exc_info:
             main()
         assert exc_info.value.code == 0
 
-    def test_unset_uv_graceful_when_no_config(self, monkeypatch, fake_uv_config_path, capsys):
-        monkeypatch.setattr(sys, 'argv', ['cnpip', 'unset', '--uv'])
+    def test_unset_uv_graceful_when_no_config(
+        self, monkeypatch, fake_uv_config_path, capsys
+    ):
+        monkeypatch.setattr(sys, "argv", ["cnpip", "unset", "--uv"])
 
         with pytest.raises(SystemExit) as exc_info:
             main()
@@ -120,28 +123,34 @@ class TestDefaultCommand:
     """cnpip 无子命令时默认执行 set。"""
 
     def test_no_args_defaults_to_set(self, monkeypatch):
-        monkeypatch.setattr(sys, 'argv', ['cnpip'])
-        monkeypatch.setattr(sys.stdin, 'isatty', lambda: True)
-        monkeypatch.setattr(sys.stdout, 'isatty', lambda: True)
+        monkeypatch.setattr(sys, "argv", ["cnpip"])
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+        monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
 
         called = []
-        monkeypatch.setattr(module, 'run_interactive_set', lambda args: called.append(True) or sys.exit(0))
+        monkeypatch.setattr(
+            module,
+            "run_interactive_set",
+            lambda args: called.append(True) or sys.exit(0),
+        )
         with pytest.raises(SystemExit):
             main()
         assert called
 
     def test_mirror_name_without_command_defaults_to_set(self, monkeypatch):
-        monkeypatch.setattr(sys, 'argv', ['cnpip', 'tuna'])
-        monkeypatch.setattr(sys.stdin, 'isatty', lambda: False)
+        monkeypatch.setattr(sys, "argv", ["cnpip", "tuna"])
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
         updated = []
-        monkeypatch.setattr(module, 'update_pip_config', lambda url, scope: updated.append(url) or True)
+        monkeypatch.setattr(
+            module, "update_pip_config", lambda url, scope: updated.append(url) or True
+        )
         main()
-        assert updated and 'tuna' in updated[0]
+        assert updated and "tuna" in updated[0]
 
     def test_mirror_name_without_command_returns_nonzero_on_failure(self, monkeypatch):
-        monkeypatch.setattr(sys, 'argv', ['cnpip', 'tuna'])
-        monkeypatch.setattr(sys.stdin, 'isatty', lambda: False)
-        monkeypatch.setattr(module, 'update_pip_config', lambda url, scope: False)
+        monkeypatch.setattr(sys, "argv", ["cnpip", "tuna"])
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+        monkeypatch.setattr(module, "update_pip_config", lambda url, scope: False)
         with pytest.raises(SystemExit) as exc_info:
             main()
         assert exc_info.value.code != 0
@@ -166,26 +175,30 @@ class TestMirrorProbe:
 
         monkeypatch.setattr(
             module.urllib.request,
-            'urlopen',
+            "urlopen",
             lambda request, timeout: calls.append((request, timeout)) or FakeResponse(),
         )
-        monkeypatch.setattr(module, 'measure_mirror_speed', REAL_MEASURE_MIRROR_SPEED)
+        monkeypatch.setattr(module, "measure_mirror_speed", REAL_MEASURE_MIRROR_SPEED)
         clock = iter([0.0, 0.10, 1.0, 1.30, 2.0, 2.10])
-        monkeypatch.setattr(module.time, 'monotonic', lambda: next(clock))
+        monkeypatch.setattr(module.time, "monotonic", lambda: next(clock))
 
         name, speed, url, error = module.measure_mirror_speed(
-            'tuna', 'https://pypi.tuna.tsinghua.edu.cn/simple'
+            "tuna", "https://pypi.tuna.tsinghua.edu.cn/simple"
         )
 
-        assert (name, url, error) == ('tuna', 'https://pypi.tuna.tsinghua.edu.cn/simple', None)
+        assert (name, url, error) == (
+            "tuna",
+            "https://pypi.tuna.tsinghua.edu.cn/simple",
+            None,
+        )
         assert speed == 100.0
         assert len(calls) == module.MIRROR_PROBE_COUNT
-        assert all(request.full_url.endswith('/simple/pip/') for request, _ in calls)
-        assert all(request.get_method() == 'GET' for request, _ in calls)
+        assert all(request.full_url.endswith("/simple/pip/") for request, _ in calls)
+        assert all(request.get_method() == "GET" for request, _ in calls)
 
     def test_conda_probe_uses_conda_metadata_endpoint(self, monkeypatch):
         calls = []
-        monkeypatch.setattr(module, 'measure_mirror_speed', REAL_MEASURE_MIRROR_SPEED)
+        monkeypatch.setattr(module, "measure_mirror_speed", REAL_MEASURE_MIRROR_SPEED)
 
         class FakeResponse:
             status = 200
@@ -201,45 +214,52 @@ class TestMirrorProbe:
 
         monkeypatch.setattr(
             module.urllib.request,
-            'urlopen',
+            "urlopen",
             lambda request, timeout: calls.append(request.full_url) or FakeResponse(),
         )
         clock = iter([0.0, 0.10, 1.0, 1.10, 2.0, 2.10])
-        monkeypatch.setattr(module.time, 'monotonic', lambda: next(clock))
+        monkeypatch.setattr(module.time, "monotonic", lambda: next(clock))
 
         name, speed, url, error = module.measure_mirror_speed(
-            'tuna',
-            'https://mirrors.tuna.tsinghua.edu.cn/anaconda',
+            "tuna",
+            "https://mirrors.tuna.tsinghua.edu.cn/anaconda",
             module.CONDA_MIRROR_PROBE_PATH,
         )
 
         assert (name, url, error) == (
-            'tuna',
-            'https://mirrors.tuna.tsinghua.edu.cn/anaconda',
+            "tuna",
+            "https://mirrors.tuna.tsinghua.edu.cn/anaconda",
             None,
         )
         assert speed == 100.0
-        assert calls == [
-            'https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main/noarch/repodata.json'
-        ] * module.MIRROR_PROBE_COUNT
+        assert (
+            calls
+            == [
+                "https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main/noarch/repodata.json"
+            ]
+            * module.MIRROR_PROBE_COUNT
+        )
 
     def test_site_scope_without_pip_returns_failure(self, monkeypatch, capsys):
-        monkeypatch.setattr(module, 'is_pip_installed', lambda: False)
+        monkeypatch.setattr(module, "is_pip_installed", lambda: False)
         monkeypatch.setattr(
             module,
-            'write_pip_config_directly',
-            lambda *args: pytest.fail('site scope must not be written without pip'),
+            "write_pip_config_directly",
+            lambda *args: pytest.fail("site scope must not be written without pip"),
         )
 
         success = module.update_pip_config(
-            'https://pypi.tuna.tsinghua.edu.cn/simple', ['--site'])
+            "https://pypi.tuna.tsinghua.edu.cn/simple", ["--site"]
+        )
 
         assert not success
-        assert '--venv' in capsys.readouterr().out
+        assert "--venv" in capsys.readouterr().out
 
-    def test_flag_without_command_defaults_to_set(self, monkeypatch, fake_uv_config_path):
-        monkeypatch.setattr(sys, 'argv', ['cnpip', 'tuna', '--uv'])
-        monkeypatch.setattr(module, 'detect_uv_binary', lambda: '/usr/bin/uv')
+    def test_flag_without_command_defaults_to_set(
+        self, monkeypatch, fake_uv_config_path
+    ):
+        monkeypatch.setattr(sys, "argv", ["cnpip", "tuna", "--uv"])
+        monkeypatch.setattr(module, "detect_uv_binary", lambda: "/usr/bin/uv")
         main()
         assert fake_uv_config_path.exists()
 
@@ -248,79 +268,79 @@ class TestHelpText:
     """help 输出全中文。"""
 
     def test_help_flag_prints_chinese(self, monkeypatch, capsys):
-        monkeypatch.setattr(sys, 'argv', ['cnpip', '--help'])
+        monkeypatch.setattr(sys, "argv", ["cnpip", "--help"])
         with pytest.raises(SystemExit) as exc_info:
             main()
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert '用法' in captured.out
-        assert '选项' in captured.out
-        assert '快速切换' in captured.out
+        assert "用法" in captured.out
+        assert "选项" in captured.out
+        assert "快速切换" in captured.out
 
     def test_short_help_flag(self, monkeypatch, capsys):
-        monkeypatch.setattr(sys, 'argv', ['cnpip', '-h'])
+        monkeypatch.setattr(sys, "argv", ["cnpip", "-h"])
         with pytest.raises(SystemExit) as exc_info:
             main()
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert '用法' in captured.out
+        assert "用法" in captured.out
 
     def test_help_no_english_labels(self, monkeypatch, capsys):
-        monkeypatch.setattr(sys, 'argv', ['cnpip', '--help'])
+        monkeypatch.setattr(sys, "argv", ["cnpip", "--help"])
         with pytest.raises(SystemExit):
             main()
         captured = capsys.readouterr()
-        assert 'positional arguments' not in captured.out
-        assert 'optional arguments' not in captured.out
-        assert 'options:' not in captured.out.lower().split('选项')[0]
+        assert "positional arguments" not in captured.out
+        assert "optional arguments" not in captured.out
+        assert "options:" not in captured.out.lower().split("选项")[0]
 
 
 class TestSyncCommand:
     """update 重命名为 sync，update 作为别名保留。"""
 
     def test_sync_calls_update_mirrors(self, monkeypatch, capsys):
-        monkeypatch.setattr(sys, 'argv', ['cnpip', 'sync'])
-        monkeypatch.setattr(module, 'update_mirrors_from_remote', lambda: (True, 'ok'))
+        monkeypatch.setattr(sys, "argv", ["cnpip", "sync"])
+        monkeypatch.setattr(module, "update_mirrors_from_remote", lambda: (True, "ok"))
         with pytest.raises(SystemExit) as exc_info:
             main()
         assert exc_info.value.code == 0
 
     def test_update_alias_still_works(self, monkeypatch, capsys):
-        monkeypatch.setattr(sys, 'argv', ['cnpip', 'update'])
-        monkeypatch.setattr(module, 'update_mirrors_from_remote', lambda: (True, 'ok'))
+        monkeypatch.setattr(sys, "argv", ["cnpip", "update"])
+        monkeypatch.setattr(module, "update_mirrors_from_remote", lambda: (True, "ok"))
         with pytest.raises(SystemExit) as exc_info:
             main()
         assert exc_info.value.code == 0
 
     def test_help_shows_sync_not_update(self, monkeypatch, capsys):
-        monkeypatch.setattr(sys, 'argv', ['cnpip', '--help'])
+        monkeypatch.setattr(sys, "argv", ["cnpip", "--help"])
         with pytest.raises(SystemExit):
             main()
         captured = capsys.readouterr()
-        assert 'sync' in captured.out
+        assert "sync" in captured.out
 
 
 class TestListCommand:
     def test_list_prints_mirror_header(self, monkeypatch, capsys):
-        monkeypatch.setattr(sys, 'argv', ['cnpip', 'list'])
+        monkeypatch.setattr(sys, "argv", ["cnpip", "list"])
         main()
         captured = capsys.readouterr()
-        assert '镜像名称' in captured.out
+        assert "镜像名称" in captured.out
 
     def test_list_prints_mirror_names(self, monkeypatch, capsys):
-        monkeypatch.setattr(sys, 'argv', ['cnpip', 'list'])
+        monkeypatch.setattr(sys, "argv", ["cnpip", "list"])
         main()
         captured = capsys.readouterr()
-        assert 'tuna' in captured.out
-        assert 'ustc' in captured.out
+        assert "tuna" in captured.out
+        assert "ustc" in captured.out
 
     def test_list_returns_nonzero_when_all_probes_fail(self, monkeypatch):
         monkeypatch.setattr(
             module,
-            'measure_mirror_speed',
-            lambda name, url: (name, float('inf'), url, 'offline'),
+            "measure_mirror_speed",
+            lambda name, url: (name, float("inf"), url, "offline"),
         )
-        monkeypatch.setattr(sys, 'argv', ['cnpip', 'list'])
+        monkeypatch.setattr(sys, "argv", ["cnpip", "list"])
         with pytest.raises(SystemExit) as exc_info:
             main()
         assert exc_info.value.code != 0
@@ -328,7 +348,7 @@ class TestListCommand:
 
 class TestDiagnosticRedaction:
     def test_redact_url_hides_credentials(self):
-        redacted = module.redact_url('https://alice:secret@example.com/simple')
-        assert 'alice' not in redacted
-        assert 'secret' not in redacted
-        assert 'example.com' in redacted
+        redacted = module.redact_url("https://alice:secret@example.com/simple")
+        assert "alice" not in redacted
+        assert "secret" not in redacted
+        assert "example.com" in redacted

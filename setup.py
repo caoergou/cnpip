@@ -10,8 +10,8 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     entry_points={
-        'console_scripts': [
-            'cnpip=cnpip.cnpip:main',
+        "console_scripts": [
+            "cnpip=cnpip.cnpip:main",
         ],
     },
     classifiers=[
