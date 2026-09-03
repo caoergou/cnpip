@@ -36,7 +36,9 @@ MIRROR_PROBE_PROJECT = "pip"
 MIRROR_PROBE_USER_AGENT = f"cnpip/{__version__}"
 CONDA_MIRROR_PROBE_PATH = "/pkgs/main/noarch/repodata.json"
 if sys.version_info < MIN_PYTHON_VERSION:
-    sys.stderr.write(f"错误: cnpip需要 Python {MIN_PYTHON_VERSION[0]}.{MIN_PYTHON_VERSION[1]} 或更高版本。\n")
+    sys.stderr.write(
+        f"错误: cnpip需要 Python {MIN_PYTHON_VERSION[0]}.{MIN_PYTHON_VERSION[1]} 或更高版本。\n"
+    )
     sys.exit(1)
 
 
@@ -51,8 +53,8 @@ def measure_mirror_speed(name, url, probe_path=None):
             start_time = time.monotonic()
             req = urllib.request.Request(
                 probe_url,
-                method='GET',
-                headers={'Accept': 'text/html', 'User-Agent': MIRROR_PROBE_USER_AGENT},
+                method="GET",
+                headers={"Accept": "text/html", "User-Agent": MIRROR_PROBE_USER_AGENT},
             )
             with urllib.request.urlopen(req, timeout=5) as response:
                 payload = response.read(64 * 1024)
@@ -66,13 +68,17 @@ def measure_mirror_speed(name, url, probe_path=None):
         except urllib.error.HTTPError as e:
             last_error = f"Status {e.code}"
         except urllib.error.URLError as e:
-            last_error = "Timeout" if isinstance(e.reason, socket.timeout) else (str(e.reason) or "Error")
+            last_error = (
+                "Timeout"
+                if isinstance(e.reason, socket.timeout)
+                else (str(e.reason) or "Error")
+            )
         except socket.timeout:
             last_error = "Timeout"
         except Exception as e:
             last_error = str(e) or "Error"
     if len(durations) < 2:
-        return name, float('inf'), url, last_error or "Unstable"
+        return name, float("inf"), url, last_error or "Unstable"
     return name, round(statistics.median(durations), 2), url, None
 
 
@@ -82,7 +88,10 @@ def list_mirrors():
     print("正在测速，请稍候...")
 
     with ThreadPoolExecutor(max_workers=len(MIRRORS)) as executor:
-        futures = [executor.submit(measure_mirror_speed, name, url) for name, url in MIRRORS.items()]
+        futures = [
+            executor.submit(measure_mirror_speed, name, url)
+            for name, url in MIRRORS.items()
+        ]
         results = [f.result() for f in futures]
 
     total_time = round((time.monotonic() - start_time) * 1000, 2)
@@ -97,11 +106,15 @@ def choose_fastest_mirror(mirrors, probe_path=None):
     """并发测速并返回最快的镜像名，全部失败返回 None。"""
     with ThreadPoolExecutor(max_workers=len(mirrors)) as executor:
         if probe_path is None:
-            futures = [executor.submit(measure_mirror_speed, name, url)
-                       for name, url in mirrors.items()]
+            futures = [
+                executor.submit(measure_mirror_speed, name, url)
+                for name, url in mirrors.items()
+            ]
         else:
-            futures = [executor.submit(measure_mirror_speed, name, url, probe_path)
-                       for name, url in mirrors.items()]
+            futures = [
+                executor.submit(measure_mirror_speed, name, url, probe_path)
+                for name, url in mirrors.items()
+            ]
         results = [f.result() for f in futures]
     results.sort(key=lambda x: x[1])
     return next((name for name, _speed, _url, error in results if error is None), None)
@@ -119,16 +132,20 @@ def print_mirror_results(results):
     for name, speed, url, error in results:
         if error is None:
             speed_str = f"{speed:.2f} ms"
-            print(f"{name:<{name_width}}\t{speed_str:<{time_width}}\t{url:<{url_width}}")
+            print(
+                f"{name:<{name_width}}\t{speed_str:<{time_width}}\t{url:<{url_width}}"
+            )
         else:
             # Truncate error if too long
-            error_msg = (error[:17] + '..') if len(error) > 19 else error
-            print(f"{name:<{name_width}}\t{error_msg:<{time_width}}\t{url:<{url_width}}")
+            error_msg = (error[:17] + "..") if len(error) > 19 else error
+            print(
+                f"{name:<{name_width}}\t{error_msg:<{time_width}}\t{url:<{url_width}}"
+            )
 
 
 def needs_trusted_host(mirror_url):
     """trusted-host 会跳过 TLS 校验，只有 http 镜像才需要设置。"""
-    return urlparse(mirror_url).scheme == 'http'
+    return urlparse(mirror_url).scheme == "http"
 
 
 def redact_url(url):
@@ -139,7 +156,7 @@ def redact_url(url):
         parsed = urlparse(url)
         if not parsed.username and not parsed.password:
             return url
-        host = parsed.hostname or ''
+        host = parsed.hostname or ""
         if parsed.port is not None:
             host = f"{host}:{parsed.port}"
         return parsed._replace(netloc=f"***@{host}").geturl()
@@ -150,10 +167,12 @@ def redact_url(url):
 def is_pip_installed():
     """检查 pip 是否安装"""
     try:
-        subprocess.run([sys.executable, '-m', 'pip', '--version'],
-                       check=True,
-                       stdout=subprocess.PIPE,
-                       stderr=subprocess.PIPE)
+        subprocess.run(
+            [sys.executable, "-m", "pip", "--version"],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
         return True
     except (subprocess.CalledProcessError, OSError):
         return False
@@ -164,30 +183,30 @@ def detect_windows_python_source():
     Windows 专用：根据 sys.executable 路径特征检测 Python 安装方式。
     返回: 'store' | 'uv' | 'conda' | 'pyenv' | 'scoop' | 'official' | 'unknown'
     """
-    exe = sys.executable.replace('\\', '/').lower()
-    if 'microsoft/windowsapps' in exe or '/windowsapps/' in exe:
-        return 'store'
-    if '/uv/python/' in exe:
-        return 'uv'
-    if 'conda' in exe or 'miniconda' in exe or 'anaconda' in exe:
-        return 'conda'
-    if '.pyenv' in exe or 'pyenv-win' in exe:
-        return 'pyenv'
-    if '/scoop/' in exe:
-        return 'scoop'
-    if 'appdata/local/programs/python' in exe:
-        return 'official'
-    return 'unknown'
+    exe = sys.executable.replace("\\", "/").lower()
+    if "microsoft/windowsapps" in exe or "/windowsapps/" in exe:
+        return "store"
+    if "/uv/python/" in exe:
+        return "uv"
+    if "conda" in exe or "miniconda" in exe or "anaconda" in exe:
+        return "conda"
+    if ".pyenv" in exe or "pyenv-win" in exe:
+        return "pyenv"
+    if "/scoop/" in exe:
+        return "scoop"
+    if "appdata/local/programs/python" in exe:
+        return "official"
+    return "unknown"
 
 
 WINDOWS_PYTHON_SOURCE_NAMES = {
-    'store':    'Windows 商店 (Microsoft Store)',
-    'uv':       'uv 管理的 Python',
-    'conda':    'Conda/Miniconda',
-    'pyenv':    'pyenv-win',
-    'scoop':    'Scoop',
-    'official': '官方安装包 (python.org)',
-    'unknown':  '未知',
+    "store": "Windows 商店 (Microsoft Store)",
+    "uv": "uv 管理的 Python",
+    "conda": "Conda/Miniconda",
+    "pyenv": "pyenv-win",
+    "scoop": "Scoop",
+    "official": "官方安装包 (python.org)",
+    "unknown": "未知",
 }
 
 
@@ -196,52 +215,54 @@ def detect_environment():
     检测当前 Python 环境类型。
     返回: 'uvx' | 'uv_venv' | 'conda' | 'pipx' | 'venv' | 'system'
     """
-    exe = sys.executable.replace('\\', '/')
+    exe = sys.executable.replace("\\", "/")
 
     # 1. uvx 临时工具环境（uv tool run / uvx）
-    uv_tool_dir = os.environ.get('UV_TOOL_DIR', '')
-    if uv_tool_dir and uv_tool_dir.replace('\\', '/') in exe:
-        return 'uvx'
-    if '/uv/tools/' in exe:
-        return 'uvx'
+    uv_tool_dir = os.environ.get("UV_TOOL_DIR", "")
+    if uv_tool_dir and uv_tool_dir.replace("\\", "/") in exe:
+        return "uvx"
+    if "/uv/tools/" in exe:
+        return "uvx"
 
     # 2. conda 环境（优先于 venv，因为 conda 也会改 sys.prefix）
-    if os.environ.get('CONDA_PREFIX'):
-        return 'conda'
+    if os.environ.get("CONDA_PREFIX"):
+        return "conda"
 
     # 3. pipx 隔离环境
-    if platform.system() == 'Windows':
-        localappdata = os.environ.get('LOCALAPPDATA', str(Path.home() / 'AppData' / 'Local'))
-        default_pipx_home = str(Path(localappdata) / 'pipx')
+    if platform.system() == "Windows":
+        localappdata = os.environ.get(
+            "LOCALAPPDATA", str(Path.home() / "AppData" / "Local")
+        )
+        default_pipx_home = str(Path(localappdata) / "pipx")
     else:
-        default_pipx_home = str(Path.home() / '.local' / 'pipx')
-    pipx_home = os.environ.get('PIPX_HOME', default_pipx_home).replace('\\', '/')
+        default_pipx_home = str(Path.home() / ".local" / "pipx")
+    pipx_home = os.environ.get("PIPX_HOME", default_pipx_home).replace("\\", "/")
     if pipx_home in exe:
-        return 'pipx'
+        return "pipx"
 
     # 4. 虚拟环境
     if sys.prefix != sys.base_prefix:
         # 检测是否由 uv 创建（pyvenv.cfg 中含有 uv = ...）
-        pyvenv_cfg = Path(sys.prefix) / 'pyvenv.cfg'
+        pyvenv_cfg = Path(sys.prefix) / "pyvenv.cfg"
         if pyvenv_cfg.exists():
             try:
-                cfg_content = pyvenv_cfg.read_text(encoding='utf-8', errors='replace')
-                if re.search(r'^uv\s*=', cfg_content, re.MULTILINE):
-                    return 'uv_venv'
+                cfg_content = pyvenv_cfg.read_text(encoding="utf-8", errors="replace")
+                if re.search(r"^uv\s*=", cfg_content, re.MULTILINE):
+                    return "uv_venv"
             except Exception:
                 pass
-        return 'venv'
+        return "venv"
 
-    return 'system'
+    return "system"
 
 
 ENV_DESCRIPTIONS = {
-    'uvx':     'uvx 临时工具环境',
-    'uv_venv': 'uv 管理的虚拟环境',
-    'conda':   'Conda 环境',
-    'pipx':    'pipx 隔离环境',
-    'venv':    '虚拟环境',
-    'system':  '系统环境',
+    "uvx": "uvx 临时工具环境",
+    "uv_venv": "uv 管理的虚拟环境",
+    "conda": "Conda 环境",
+    "pipx": "pipx 隔离环境",
+    "venv": "虚拟环境",
+    "system": "系统环境",
 }
 
 
@@ -252,12 +273,12 @@ def get_pip_config():
     try:
         # 使用 subprocess 获取 pip config list 输出
         result = subprocess.run(
-            [sys.executable, '-m', 'pip', 'config', 'list'],
+            [sys.executable, "-m", "pip", "config", "list"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            encoding='utf-8',
-            errors='replace',
-            check=False
+            encoding="utf-8",
+            errors="replace",
+            check=False,
         )
         if result.returncode != 0:
             return None, None
@@ -268,14 +289,14 @@ def get_pip_config():
 
         for line in output.splitlines():
             # 格式: [section].index-url='...'，前缀可能是 global/user/site/install 等
-            if '.index-url' in line:
-                parts = line.split('=', 1)
+            if ".index-url" in line:
+                parts = line.split("=", 1)
                 if len(parts) == 2:
                     val = parts[1].strip().strip("'\"")
                     if val:
                         index_url = val
-            elif '.trusted-host' in line:
-                parts = line.split('=', 1)
+            elif ".trusted-host" in line:
+                parts = line.split("=", 1)
                 if len(parts) == 2:
                     val = parts[1].strip().strip("'\"")
                     if val:
@@ -291,18 +312,18 @@ def get_scope_args(args):
     根据用户标志和环境确定 pip 配置参数。
     """
     if args.global_:
-        return ['--global']
+        return ["--global"]
     elif args.user:
-        return ['--user']
+        return ["--user"]
     elif args.venv:
-        return ['--site']
+        return ["--site"]
 
     # 自动检测
     env = detect_environment()
-    if env in ('venv', 'uv_venv', 'conda'):
-        return ['--site']
+    if env in ("venv", "uv_venv", "conda"):
+        return ["--site"]
     else:
-        return ['--user']
+        return ["--user"]
 
 
 def get_scope_description(scope_args):
@@ -311,11 +332,11 @@ def get_scope_description(scope_args):
     """
     if not scope_args:
         return "自动"
-    if '--global' in scope_args:
+    if "--global" in scope_args:
         return "系统全局配置"
-    if '--user' in scope_args:
+    if "--user" in scope_args:
         return "当前用户配置"
-    if '--site' in scope_args:
+    if "--site" in scope_args:
         return "虚拟环境配置"
     return " ".join(scope_args)
 
@@ -323,13 +344,15 @@ def get_scope_description(scope_args):
 def get_global_scope_hint():
     """根据平台返回 --global 权限不足时的针对性提示"""
     system = platform.system()
-    if system in ('Linux', 'Darwin'):
+    if system in ("Linux", "Darwin"):
         return "请尝试使用 sudo 运行: sudo cnpip set --global"
-    elif system == 'Windows':
+    elif system == "Windows":
         source = detect_windows_python_source()
-        if source == 'store':
-            return ("检测到 Windows 商店版 Python，全局配置受沙盒限制。\n"
-                    "建议改用 --user: cnpip set --user")
+        if source == "store":
+            return (
+                "检测到 Windows 商店版 Python，全局配置受沙盒限制。\n"
+                "建议改用 --user: cnpip set --user"
+            )
         else:
             return "请以管理员身份运行 PowerShell 或命令提示符后重试"
     return "请检查是否有足够的文件系统权限"
@@ -337,9 +360,10 @@ def get_global_scope_hint():
 
 # === uv 相关 ===
 
+
 def detect_uv_binary():
     """查找 uv 可执行文件路径，找不到返回 None。"""
-    return shutil.which('uv')
+    return shutil.which("uv")
 
 
 def get_uv_config_path():
@@ -349,12 +373,12 @@ def get_uv_config_path():
     Windows:     %APPDATA%/uv/uv.toml
     """
     system = platform.system()
-    if system == 'Windows':
-        appdata = os.environ.get('APPDATA', str(Path.home() / 'AppData' / 'Roaming'))
-        return Path(appdata) / 'uv' / 'uv.toml'
+    if system == "Windows":
+        appdata = os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming"))
+        return Path(appdata) / "uv" / "uv.toml"
     else:
-        xdg_config = os.environ.get('XDG_CONFIG_HOME', str(Path.home() / '.config'))
-        return Path(xdg_config) / 'uv' / 'uv.toml'
+        xdg_config = os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))
+        return Path(xdg_config) / "uv" / "uv.toml"
 
 
 def get_uv_index_url():
@@ -366,16 +390,16 @@ def get_uv_index_url():
     if not config_path.exists():
         return None
     try:
-        content = config_path.read_text(encoding='utf-8', errors='replace')
+        content = config_path.read_text(encoding="utf-8", errors="replace")
         blocks = _get_uv_index_blocks(content)
         # 优先显示 cnpip 自己管理的 block；否则兼容旧版/用户配置中的默认 block。
         for block in blocks:
-            if _uv_block_value(block, 'name') == 'cnpip':
-                return _uv_block_value(block, 'url')
+            if _uv_block_value(block, "name") == "cnpip":
+                return _uv_block_value(block, "url")
         for block in blocks:
-            if _uv_block_value(block, 'default') == 'true':
-                return _uv_block_value(block, 'url')
-        return _uv_block_value(blocks[0], 'url') if blocks else None
+            if _uv_block_value(block, "default") == "true":
+                return _uv_block_value(block, "url")
+        return _uv_block_value(blocks[0], "url") if blocks else None
     except Exception:
         return None
 
@@ -384,12 +408,12 @@ def _get_uv_index_blocks(content):
     """按文本边界提取 uv 的 [[index]] block，不解析或改写其他 TOML。"""
     lines = content.splitlines(keepends=True)
     blocks = []
-    starts = [i for i, line in enumerate(lines) if line.strip() == '[[index]]']
+    starts = [i for i, line in enumerate(lines) if line.strip() == "[[index]]"]
     for start in starts:
         end = start + 1
-        while end < len(lines) and not lines[end].strip().startswith('['):
+        while end < len(lines) and not lines[end].strip().startswith("["):
             end += 1
-        blocks.append(''.join(lines[start:end]))
+        blocks.append("".join(lines[start:end]))
     return blocks
 
 
@@ -399,8 +423,13 @@ def _uv_block_value(block, key):
         block,
         re.MULTILINE,
     )
-    return (match.group(1) if match and match.group(1) is not None
-            else match.group(2) if match else None)
+    return (
+        match.group(1)
+        if match and match.group(1) is not None
+        else match.group(2)
+        if match
+        else None
+    )
 
 
 def _remove_cnpip_uv_blocks(content):
@@ -409,18 +438,18 @@ def _remove_cnpip_uv_blocks(content):
     result = []
     i = 0
     while i < len(lines):
-        if lines[i].strip() != '[[index]]':
+        if lines[i].strip() != "[[index]]":
             result.append(lines[i])
             i += 1
             continue
         end = i + 1
-        while end < len(lines) and not lines[end].strip().startswith('['):
+        while end < len(lines) and not lines[end].strip().startswith("["):
             end += 1
-        block = ''.join(lines[i:end])
-        if _uv_block_value(block, 'name') != 'cnpip':
+        block = "".join(lines[i:end])
+        if _uv_block_value(block, "name") != "cnpip":
             result.extend(lines[i:end])
         i = end
-    return ''.join(result)
+    return "".join(result)
 
 
 def update_uv_config(mirror_url):
@@ -436,13 +465,15 @@ def update_uv_config(mirror_url):
     change, error = ManagedFileChange.begin("uv:user", config_path)
     if not change:
         return False, error
-    new_block = (f'[[index]]\nname = {json.dumps("cnpip")}\n'
-                 f'url = {json.dumps(mirror_url)}\ndefault = true\n')
+    new_block = (
+        f"[[index]]\nname = {json.dumps('cnpip')}\n"
+        f"url = {json.dumps(mirror_url)}\ndefault = true\n"
+    )
     try:
         if config_path.exists():
-            content = config_path.read_text(encoding='utf-8', errors='replace')
-            clean = _remove_cnpip_uv_blocks(content).lstrip('\n')
-            new_content = new_block + ('\n' + clean if clean else '')
+            content = config_path.read_text(encoding="utf-8", errors="replace")
+            clean = _remove_cnpip_uv_blocks(content).lstrip("\n")
+            new_content = new_block + ("\n" + clean if clean else "")
         else:
             config_path.parent.mkdir(parents=True, exist_ok=True)
             new_content = new_block
@@ -475,25 +506,27 @@ def get_pip_config_path_for_scope(scope):
     pip 配置文件是普通 INI 文件，无需 pip 命令即可直接读写。
     """
     system = platform.system()
-    if scope == 'user':
-        if system == 'Windows':
-            appdata = os.environ.get('APPDATA', str(Path.home() / 'AppData' / 'Roaming'))
-            return Path(appdata) / 'pip' / 'pip.ini'
-        elif system == 'Darwin':
-            return Path.home() / 'Library' / 'Application Support' / 'pip' / 'pip.conf'
+    if scope == "user":
+        if system == "Windows":
+            appdata = os.environ.get(
+                "APPDATA", str(Path.home() / "AppData" / "Roaming")
+            )
+            return Path(appdata) / "pip" / "pip.ini"
+        elif system == "Darwin":
+            return Path.home() / "Library" / "Application Support" / "pip" / "pip.conf"
         else:
-            xdg = os.environ.get('XDG_CONFIG_HOME', str(Path.home() / '.config'))
-            return Path(xdg) / 'pip' / 'pip.conf'
-    elif scope == 'global':
-        if system == 'Windows':
-            programdata = os.environ.get('PROGRAMDATA', 'C:\\ProgramData')
-            return Path(programdata) / 'pip' / 'pip.ini'
-        elif system == 'Darwin':
-            return Path('/Library/Application Support/pip/pip.conf')
+            xdg = os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))
+            return Path(xdg) / "pip" / "pip.conf"
+    elif scope == "global":
+        if system == "Windows":
+            programdata = os.environ.get("PROGRAMDATA", "C:\\ProgramData")
+            return Path(programdata) / "pip" / "pip.ini"
+        elif system == "Darwin":
+            return Path("/Library/Application Support/pip/pip.conf")
         else:
-            return Path('/etc/pip.conf')
-    elif scope == 'site':
-        return Path(sys.prefix) / ('pip.ini' if system == 'Windows' else 'pip.conf')
+            return Path("/etc/pip.conf")
+    elif scope == "site":
+        return Path(sys.prefix) / ("pip.ini" if system == "Windows" else "pip.conf")
     return None
 
 
@@ -514,17 +547,18 @@ def write_pip_config_directly(mirror_url, scope):
     try:
         config = configparser.ConfigParser(interpolation=None)
         if config_path.exists():
-            config.read(config_path, encoding='utf-8')
-        if not config.has_section('global'):
-            config.add_section('global')
-        config.set('global', 'index-url', mirror_url)
+            config.read(config_path, encoding="utf-8")
+        if not config.has_section("global"):
+            config.add_section("global")
+        config.set("global", "index-url", mirror_url)
         # trusted-host 会跳过 TLS 校验，仅对 http 镜像有必要；https 镜像应移除残留配置
         if needs_trusted_host(mirror_url):
-            config.set('global', 'trusted-host', urlparse(mirror_url).netloc)
-        elif config.has_option('global', 'trusted-host'):
-            config.remove_option('global', 'trusted-host')
+            config.set("global", "trusted-host", urlparse(mirror_url).netloc)
+        elif config.has_option("global", "trusted-host"):
+            config.remove_option("global", "trusted-host")
         config_path.parent.mkdir(parents=True, exist_ok=True)
         from io import StringIO
+
         stream = StringIO()
         config.write(stream)
         atomic_write_text(config_path, stream.getvalue())
@@ -534,8 +568,10 @@ def write_pip_config_directly(mirror_url, scope):
         return True, f"成功设置 pip 镜像源为 '{mirror_url}'\n配置文件: {config_path}"
     except PermissionError:
         change.abort()
-        hint = get_global_scope_hint() if scope == 'global' else ''
-        return False, f"权限不足，无法写入 {config_path}" + (f"\n{hint}" if hint else '')
+        hint = get_global_scope_hint() if scope == "global" else ""
+        return False, f"权限不足，无法写入 {config_path}" + (
+            f"\n{hint}" if hint else ""
+        )
     except Exception as e:
         change.abort()
         return False, f"写入失败: {e}"
@@ -561,14 +597,21 @@ def update_pip_config(mirror_url, scope_args):
     scope_desc = get_scope_description(scope_args)
 
     if not is_pip_installed():
-        print(f"\n检测到当前环境未安装 pip（可能是 uvx 环境）。")
-        if '--site' in scope_args:
+        print("\n检测到当前环境未安装 pip（可能是 uvx 环境）。")
+        if "--site" in scope_args:
             print("错误: --venv 在 uvx 临时环境中无意义，配置会随环境消失。")
             print("建议改用 --user 写入用户级 pip 配置，或 --uv 配置 uv 镜像源。")
             return False
-        elif '--user' in scope_args or '--global' in scope_args or '--site' in scope_args:
-            direct_scope = ('global' if '--global' in scope_args
-                            else 'site' if '--site' in scope_args else 'user')
+        elif (
+            "--user" in scope_args or "--global" in scope_args or "--site" in scope_args
+        ):
+            direct_scope = (
+                "global"
+                if "--global" in scope_args
+                else "site"
+                if "--site" in scope_args
+                else "user"
+            )
             print(f"正在直接写入 pip {scope_desc}（无需 pip 命令）...")
             success, msg = write_pip_config_directly(mirror_url, direct_scope)
             print(msg)
@@ -588,7 +631,11 @@ def update_pip_config(mirror_url, scope_args):
                     print(f"pip config set {scope_str} global.trusted-host {host}")
         return False
 
-    direct_scope = 'global' if '--global' in scope_args else ('site' if '--site' in scope_args else 'user')
+    direct_scope = (
+        "global"
+        if "--global" in scope_args
+        else ("site" if "--site" in scope_args else "user")
+    )
     print(f"\n正在修改 [{scope_desc}] ...", flush=True)
     success, msg = write_pip_config_directly(mirror_url, direct_scope)
     print(msg)
@@ -600,23 +647,34 @@ def unset_pip_mirror(scope_args):
     scope_str = " ".join(scope_args) if scope_args else "auto"
 
     if not is_pip_installed():
-        print(f"\n检测到当前环境未安装 pip（可能是 uvx 环境）。")
-        if '--venv' in scope_args:
+        print("\n检测到当前环境未安装 pip（可能是 uvx 环境）。")
+        if "--venv" in scope_args:
             print("错误: --venv 在 uvx 临时环境中无意义。")
             return False
-        elif '--user' in scope_args or '--global' in scope_args or '--site' in scope_args:
-            direct_scope = ('global' if '--global' in scope_args
-                            else 'site' if '--site' in scope_args else 'user')
+        elif (
+            "--user" in scope_args or "--global" in scope_args or "--site" in scope_args
+        ):
+            direct_scope = (
+                "global"
+                if "--global" in scope_args
+                else "site"
+                if "--site" in scope_args
+                else "user"
+            )
             success, msg = unset_pip_config_directly(direct_scope)
             print(msg)
             return success
         else:
-            print(f"请复制以下命令在终端运行以取消配置:")
+            print("请复制以下命令在终端运行以取消配置:")
             print(f"pip config unset {scope_str} global.index-url")
             print(f"pip config unset {scope_str} global.trusted-host")
         return False
 
-    direct_scope = 'global' if '--global' in scope_args else ('site' if '--site' in scope_args else 'user')
+    direct_scope = (
+        "global"
+        if "--global" in scope_args
+        else ("site" if "--site" in scope_args else "user")
+    )
     success, msg = unset_pip_config_directly(direct_scope)
     print(msg)
     return success
@@ -629,12 +687,12 @@ def get_pip_config_files():
     """
     try:
         result = subprocess.run(
-            [sys.executable, '-m', 'pip', 'config', 'list', '-v'],
+            [sys.executable, "-m", "pip", "config", "list", "-v"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            encoding='utf-8',
-            errors='replace',
-            check=False
+            encoding="utf-8",
+            errors="replace",
+            check=False,
         )
         # pip -v 输出配置文件路径到 stderr
         output = result.stderr + result.stdout
@@ -658,18 +716,18 @@ def show_info():
     print(f"操作系统: {system} {platform.release()}")
 
     # Windows 额外显示 Python 安装来源
-    if system == 'Windows':
+    if system == "Windows":
         source = detect_windows_python_source()
-        source_name = WINDOWS_PYTHON_SOURCE_NAMES.get(source, '未知')
+        source_name = WINDOWS_PYTHON_SOURCE_NAMES.get(source, "未知")
         print(f"Python 安装来源: {source_name}")
 
     try:
         pip_ver_result = subprocess.run(
-            [sys.executable, '-m', 'pip', '--version'],
+            [sys.executable, "-m", "pip", "--version"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            encoding='utf-8',
-            errors='replace'
+            encoding="utf-8",
+            errors="replace",
         )
         pip_ver = pip_ver_result.stdout.strip()
         print(f"Pip 版本: {pip_ver}")
@@ -698,11 +756,11 @@ def show_info():
     if uv_bin:
         try:
             uv_ver_result = subprocess.run(
-                [uv_bin, '--version'],
+                [uv_bin, "--version"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                encoding='utf-8',
-                errors='replace'
+                encoding="utf-8",
+                errors="replace",
             )
             uv_ver = uv_ver_result.stdout.strip()
             print(f"uv 版本: {uv_ver}")
@@ -719,23 +777,23 @@ def show_info():
 
     # 其他包管理工具
     print("\n--- 其他包管理工具 ---")
-    for tool in ('pdm', 'poetry', 'conda'):
+    for tool in ("pdm", "poetry", "conda"):
         binary = shutil.which(tool)
         if not binary:
             print(f"{tool}: 未安装")
             continue
         try:
             ver_result = subprocess.run(
-                [binary, '--version'],
+                [binary, "--version"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                encoding='utf-8',
-                errors='replace'
+                encoding="utf-8",
+                errors="replace",
             )
             print(f"{tool}: {ver_result.stdout.strip() or '已安装'}")
         except Exception:
             print(f"{tool}: 已安装 (版本获取失败)")
-        if tool == 'pdm':
+        if tool == "pdm":
             pdm_mirror = get_pdm_mirror()
             if pdm_mirror:
                 print(f"pdm 镜像源: {redact_url(pdm_mirror)}")
@@ -743,29 +801,30 @@ def show_info():
 
 # === 交互式 set ===
 
+
 def scan_available_tools():
     """扫描当前可配置镜像源的包管理工具，返回 (名称, 状态描述) 列表。"""
     tools = []
     if is_pip_installed():
         index_url, _ = get_pip_config()
-        tools.append(('pip', f"当前源: {index_url or '默认'}"))
+        tools.append(("pip", f"当前源: {index_url or '默认'}"))
     if detect_uv_binary():
-        tools.append(('uv', f"当前源: {get_uv_index_url() or '默认'}"))
-    if shutil.which('pdm'):
-        tools.append(('pdm', f"当前源: {get_pdm_mirror() or '默认'}"))
-    if shutil.which('poetry') and Path('pyproject.toml').exists():
-        tools.append(('poetry', '当前项目 (pyproject.toml)'))
-    if shutil.which('conda'):
-        tools.append(('conda', '用户级 (~/.condarc)'))
+        tools.append(("uv", f"当前源: {get_uv_index_url() or '默认'}"))
+    if shutil.which("pdm"):
+        tools.append(("pdm", f"当前源: {get_pdm_mirror() or '默认'}"))
+    if shutil.which("poetry") and Path("pyproject.toml").exists():
+        tools.append(("poetry", "当前项目 (pyproject.toml)"))
+    if shutil.which("conda"):
+        tools.append(("conda", "用户级 (~/.condarc)"))
     return tools
 
 
 def default_tool_selection(tool_names):
     """回车时的默认选择：与非交互行为一致（uvx 环境配 uv，否则配 pip）。"""
-    if detect_environment() == 'uvx' and 'uv' in tool_names:
-        return ['uv']
-    if 'pip' in tool_names:
-        return ['pip']
+    if detect_environment() == "uvx" and "uv" in tool_names:
+        return ["uv"]
+    if "pip" in tool_names:
+        return ["pip"]
     return tool_names[:1]
 
 
@@ -774,10 +833,10 @@ def parse_tool_selection(raw, tool_names, default):
     raw = raw.strip().lower()
     if not raw:
         return list(default)
-    if raw in ('a', 'all', '全部'):
+    if raw in ("a", "all", "全部"):
         return list(tool_names)
     picked = []
-    for token in re.split(r'[\s,，]+', raw):
+    for token in re.split(r"[\s,，]+", raw):
         if not token.isdigit() or not 1 <= int(token) <= len(tool_names):
             return None
         name = tool_names[int(token) - 1]
@@ -788,21 +847,24 @@ def parse_tool_selection(raw, tool_names, default):
 
 def apply_mirror_to_tool(tool, mirror_name, mirror_url, args):
     """将镜像源应用到单个工具，返回是否成功。"""
-    if tool == 'pip':
+    if tool == "pip":
         return update_pip_config(mirror_url, get_scope_args(args) if args else [])
-    if tool == 'uv':
+    if tool == "uv":
         success, msg = update_uv_config(mirror_url)
-    elif tool == 'pdm':
+    elif tool == "pdm":
         success, msg = set_pdm_mirror(mirror_url)
-    elif tool == 'poetry':
+    elif tool == "poetry":
         success, msg = set_poetry_mirror(mirror_url)
-    elif tool == 'conda':
+    elif tool == "conda":
         # conda 镜像是独立服务，选中的 pypi 镜像不提供时单独测速
         conda_name = mirror_name if mirror_name in CONDA_MIRRORS else None
         if conda_name is None:
-            print(f"镜像源 '{mirror_name}' 不提供 conda 镜像，正在对 conda 镜像单独测速...")
+            print(
+                f"镜像源 '{mirror_name}' 不提供 conda 镜像，正在对 conda 镜像单独测速..."
+            )
             conda_name = choose_fastest_mirror(
-                CONDA_MIRRORS, probe_path=CONDA_MIRROR_PROBE_PATH)
+                CONDA_MIRRORS, probe_path=CONDA_MIRROR_PROBE_PATH
+            )
             if conda_name is None:
                 print("错误: 无法连接到任何 conda 镜像源")
                 return False
@@ -827,9 +889,11 @@ def run_interactive_set(args):
         print(f"  {i}. {name:<8} {desc}")
 
     default = default_tool_selection(tool_names)
-    default_str = ' '.join(str(tool_names.index(t) + 1) for t in default)
-    prompt = (f"\n请选择要配置的工具（编号，空格分隔多个；a=全部；"
-              f"回车={default_str} 即 {'/'.join(default)}）: ")
+    default_str = " ".join(str(tool_names.index(t) + 1) for t in default)
+    prompt = (
+        f"\n请选择要配置的工具（编号，空格分隔多个；a=全部；"
+        f"回车={default_str} 即 {'/'.join(default)}）: "
+    )
     try:
         while True:
             selection = parse_tool_selection(input(prompt), tool_names, default)
@@ -843,7 +907,9 @@ def run_interactive_set(args):
     # 解析镜像名：未指定时测速选最快
     if args.mirror is None:
         results = list_mirrors()
-        mirror_name = next((name for name, _speed, _url, error in results if error is None), None)
+        mirror_name = next(
+            (name for name, _speed, _url, error in results if error is None), None
+        )
         if mirror_name is None:
             print("错误: 无法连接到任何镜像源")
             sys.exit(1)
@@ -879,16 +945,16 @@ def run_interactive_set(args):
 
 def rollback_mirror_from_tool(tool, args):
     """回滚交互式批量 set 中已经成功的单个工具。"""
-    if tool == 'pip':
+    if tool == "pip":
         success = unset_pip_mirror(get_scope_args(args))
         return success, None if success else "恢复 pip 镜像源失败"
-    if tool == 'uv':
+    if tool == "uv":
         return unset_uv_config()
-    if tool == 'pdm':
+    if tool == "pdm":
         return unset_pdm_mirror()
-    if tool == 'poetry':
+    if tool == "poetry":
         return unset_poetry_mirror()
-    if tool == 'conda':
+    if tool == "conda":
         return unset_conda_mirror()
     return False, f"不支持回滚的工具: {tool}"
 
@@ -921,20 +987,20 @@ cnpip - 快速切换 pip 镜像源
 def _ensure_command():
     """argv 中没有识别到子命令时，默认插入 'set'。"""
     if len(sys.argv) < 2:
-        sys.argv.insert(1, 'set')
+        sys.argv.insert(1, "set")
         return
     first = sys.argv[1]
-    if first in ('-h', '--help'):
+    if first in ("-h", "--help"):
         return
     if first not in _COMMANDS:
-        sys.argv.insert(1, 'set')
+        sys.argv.insert(1, "set")
 
 
 def main():
     """主函数，解析命令行参数并执行相应操作"""
     _ensure_command()
 
-    if '-h' in sys.argv[1:] or '--help' in sys.argv[1:]:
+    if "-h" in sys.argv[1:] or "--help" in sys.argv[1:]:
         print(_HELP_TEXT)
         sys.exit(0)
 
@@ -954,8 +1020,8 @@ def main():
 
     args = parser.parse_args()
 
-    if args.command == 'update':
-        args.command = 'sync'
+    if args.command == "update":
+        args.command = "sync"
 
     if args.command == "list":
         results = list_mirrors()
@@ -964,10 +1030,21 @@ def main():
         return
     elif args.command == "set":
         # 交互式：TTY 下未指定任何工具/作用域 flag 时，扫描环境让用户选择要配置的工具
-        explicit_flags = (args.uv or args.pdm or args.poetry or args.conda
-                          or args.global_ or args.user or args.venv)
-        if (not explicit_flags and not args.yes
-                and sys.stdin.isatty() and sys.stdout.isatty()):
+        explicit_flags = (
+            args.uv
+            or args.pdm
+            or args.poetry
+            or args.conda
+            or args.global_
+            or args.user
+            or args.venv
+        )
+        if (
+            not explicit_flags
+            and not args.yes
+            and sys.stdin.isatty()
+            and sys.stdout.isatty()
+        ):
             run_interactive_set(args)
 
         # conda 使用独立的镜像表（anaconda 镜像与 pypi 镜像是不同的服务）
@@ -975,7 +1052,8 @@ def main():
             if args.mirror is None:
                 print("未指定镜像源，即将对支持 conda 的镜像测速...")
                 conda_mirror_name = choose_fastest_mirror(
-                    CONDA_MIRRORS, probe_path=CONDA_MIRROR_PROBE_PATH)
+                    CONDA_MIRRORS, probe_path=CONDA_MIRROR_PROBE_PATH
+                )
                 if conda_mirror_name is None:
                     print("错误: 无法连接到任何 conda 镜像源")
                     sys.exit(1)
@@ -994,7 +1072,9 @@ def main():
         if args.mirror is None:
             print("未指定镜像源，即将测速并选择最快的镜像源...")
             results = list_mirrors()
-            fastest_mirror = next((name for name, speed, url, error in results if error is None), None)
+            fastest_mirror = next(
+                (name for name, speed, url, error in results if error is None), None
+            )
             if fastest_mirror is None:
                 print("错误: 无法连接到任何镜像源")
                 sys.exit(1)
@@ -1028,7 +1108,7 @@ def main():
             sys.exit(0 if success else 1)
         else:
             env = detect_environment()
-            if env == 'uvx' and not args.global_ and not args.user and not args.venv:
+            if env == "uvx" and not args.global_ and not args.user and not args.venv:
                 # uvx 环境：自动走 uv 配置路径
                 uv = detect_uv_binary()
                 if uv:

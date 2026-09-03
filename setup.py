@@ -1,5 +1,12 @@
 from setuptools import setup, find_packages
 
+DEV_REQUIREMENTS = ["pytest>=7.0"]
+
+QUALITY_REQUIREMENTS = [
+    "ruff==0.11.13",
+    "pyright==1.1.405",
+]
+
 setup(
     name="cnpip",
     version="1.6.0",
@@ -10,8 +17,8 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     entry_points={
-        'console_scripts': [
-            'cnpip=cnpip.cnpip:main',
+        "console_scripts": [
+            "cnpip=cnpip.cnpip:main",
         ],
     },
     classifiers=[
@@ -28,4 +35,8 @@ setup(
         "Topic :: Utilities",
     ],
     install_requires=[],
+    extras_require={
+        "dev": DEV_REQUIREMENTS,
+        "quality": QUALITY_REQUIREMENTS,
+    },
 )

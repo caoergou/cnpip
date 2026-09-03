@@ -13,6 +13,7 @@ readme = "README.md"
 requires-python = ">=3.7"
 keywords = ["pip", "mirror", "Chinese", "speed", "cli", "uv"]
 dependencies = []
+dynamic = ["optional-dependencies"]
 classifiers = [
     "License :: OSI Approved :: MIT License",
     "Intended Audience :: Developers",
@@ -30,15 +31,20 @@ classifiers = [
     "Topic :: Utilities"
 ]
 
-[project.optional-dependencies]
-dev = ["pytest>=7.0"]
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v"
 markers = [
     "real_cli: tests that execute real third-party CLI tools in an isolated environment",
 ]
+
+[tool.ruff]
+target-version = "py37"
+
+[tool.pyright]
+include = ["cnpip"]
+pythonVersion = "3.7"
+typeCheckingMode = "basic"
 
 [project.urls]
 Homepage = "https://github.com/caoergou/cnpip"
