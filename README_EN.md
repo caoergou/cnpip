@@ -50,6 +50,12 @@ In a `uvx` environment, the default target is the user-level uv configuration, n
 
 Conda and PyPI mirrors are separate services, so cnpip keeps a separate conda mirror table. A PyPI mirror is not necessarily usable for conda.
 
+## cnpip and chsrc
+
+[chsrc](https://github.com/RubyMetric/chsrc) is a general-purpose source-configuration tool for multiple operating systems and software ecosystems. Beyond Python tools, it covers system package managers, container registries, and tools from other language ecosystems. Consider it when you need to manage mirror configuration across a broader set of software.
+
+`cnpip` focuses on configuration semantics, benchmarking, and recovery for `pip`, `uv`, `PDM`, `Poetry`, and `conda`. The tools have no dependency on or integration with each other. Use only one of them to configure a given package manager, so their configuration does not overwrite each other. If a configuration managed by cnpip is changed later by another tool or manually, `cnpip unset` conservatively refuses to overwrite that change.
+
 ## Common commands
 
 | Goal | Command |
