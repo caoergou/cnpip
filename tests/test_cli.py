@@ -275,7 +275,7 @@ class TestHelpText:
         captured = capsys.readouterr()
         assert "用法" in captured.out
         assert "选项" in captured.out
-        assert "快速切换" in captured.out
+        assert "配置 Python 包管理镜像源" in captured.out
 
     def test_short_help_flag(self, monkeypatch, capsys):
         monkeypatch.setattr(sys, "argv", ["cnpip", "-h"])
