@@ -60,6 +60,113 @@ class TestInfoCommand:
         captured = capsys.readouterr()
         assert "uv" in captured.out.lower()
 
+class TestStatusCommand:
+    def test_status_all_tools_missing(self, monkeypatch, capsys):
+        monkeypatch.setattr(sys, "argv", ["cnpip", "status"])
+        monkeypatch.setattr(module, "is_pip_installed", lambda: False)
+        monkeypatch.setattr(module, "detect_uv_binary", lambda: None)
+        monkeypatch.setattr(module.shutil, "which", lambda name: None)
+
+        main()
+
+        captured = capsys.readouterr()
+        assert "未安装" in captured.out
+        assert "pip" in captured.out
+        assert "uv" in captured.out
+        assert "pdm" in captured.out
+        assert "poetry" in captured.out
+        assert "conda" in captured.out
+
+    def test_status_pip_with_config(self, monkeypatch, capsys):
+        monkeypatch.setattr(sys, "argv", ["cnpip", "status"])
+        monkeypatch.setattr(module, "is_pip_installed", lambda: True)
+        monkeypatch.setattr(
+            module,
+            "get_pip_config",
+            lambda: ("https://example.com/simple", None),
+        )
+        monkeypatch.setattr(module, "get_source_overrides", lambda tool: [])
+
+        main()
+
+        captured = capsys.readouterr()
+        assert "example.com/simple" in captured.out
+
+    def test_status_env_override_shown(self, monkeypatch, capsys):
+        monkeypatch.setattr(sys, "argv", ["cnpip", "status"])
+        monkeypatch.setattr(module, "is_pip_installed", lambda: True)
+        monkeypatch.setattr(
+            module,
+            "get_pip_config",
+            lambda: ("https://example.com/simple", None),
+        )
+        monkeypatch.setattr(
+            module,
+            "get_source_overrides",
+            lambda tool: [("PIP_INDEX_URL", "https://override.example.com/simple")],
+        )
+
+        main()
+
+        captured = capsys.readouterr()
+        assert "PIP_INDEX_URL" in captured.out
+
+    def test_status_does_not_call_write_helpers(self, monkeypatch, capsys):
+        monkeypatch.setattr(sys, "argv", ["cnpip", "status"])
+        monkeypatch.setattr(module, "is_pip_installed", lambda: False)
+        monkeypatch.setattr(module, "detect_uv_binary", lambda: None)
+
+        def fail_write(*args, **kwargs):
+            raise AssertionError("status 不应调用写配置函数")
+
+        monkeypatch.setattr(module, "set_pip_index", fail_write, raising=False)
+        monkeypatch.setattr(module, "set_uv_index", fail_write, raising=False)
+
+        main()
+
+    def test_status_returns_without_sys_exit(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["cnpip", "status"])
+        monkeypatch.setattr(module, "is_pip_installed", lambda: False)
+        monkeypatch.setattr(module, "detect_uv_binary", lambda: None)
+        monkeypatch.setattr(module.shutil, "which", lambda name: None)
+
+        main()
+
+    def test_status_conda_semantics(self, monkeypatch, capsys, tmp_path):
+        monkeypatch.setattr(sys, "argv", ["cnpip", "status"])
+        monkeypatch.setattr(module.shutil, "which", lambda name: "conda")
+
+        monkeypatch.setattr(module, "is_pip_installed", lambda: False)
+        monkeypatch.setattr(module, "detect_uv_binary", lambda: None)
+
+        config_path = tmp_path / ".condarc"
+        monkeypatch.setattr(module, "get_conda_config_path", lambda: config_path)
+        monkeypatch.setattr(
+            module,
+            "get_conda_effective_config",
+            lambda: {
+                "channels": [
+                    "https://mirror.example.com/channel-a",
+                    "https://mirror.example.com/channel-b",
+                    "https://mirror.example.com/channel-c",
+                ]
+            },
+        )
+        monkeypatch.setattr(module, "get_source_overrides", lambda tool: [])
+
+        main()
+
+        captured = capsys.readouterr()
+        assert "channel-a" in captured.out
+        assert "3 个" in captured.out
+
+        monkeypatch.setattr(module, "get_conda_effective_config", lambda: {})
+        main()
+
+        captured = capsys.readouterr()
+        assert ".condarc" in captured.out
+
+
 
 class TestSetUvCommand:
     def test_set_uv_writes_config(self, monkeypatch, fake_uv_config_path, capsys):

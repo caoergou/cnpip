@@ -1021,7 +1021,90 @@ def show_info():
 
 
 # === 交互式 set ===
+def show_status():
+    """显示 cnpip 当前能检测到的各包管理器配置状态及已知覆盖信息。
 
+    只读命令：不主动修改配置、不执行镜像测速，使用现有工具读取配置状态。
+    输出的是检测到的配置，运行时参数与临时环境变量仍可能覆盖。
+    """
+    print("cnpip 检测到的配置状态\n")
+    print(f"{'工具':<8}  {'检测到的配置':<48}  覆盖提示")
+    print(f"{'-'*8}  {'-'*48}  {'-'*20}")
+
+    # pip
+    if is_pip_installed():
+        index_url, _ = get_pip_config()
+        source = redact_url(index_url) if index_url else "默认"
+        overrides = get_source_overrides("pip")
+        override_text = ", ".join(name for name, _ in overrides) if overrides else "无"
+        print(f"{'pip':<8}  {source:<48}  {override_text}")
+    else:
+        print(f"{'pip':<8}  {'未安装':<48}  -")
+
+    # uv
+    if detect_uv_binary():
+        uv_index = get_uv_index_url()
+        source = redact_url(uv_index) if uv_index else "默认"
+        overrides = get_source_overrides("uv")
+        override_text = ", ".join(name for name, _ in overrides) if overrides else "无"
+        print(f"{'uv':<8}  {source:<48}  {override_text}")
+    else:
+        print(f"{'uv':<8}  {'未安装':<48}  -")
+
+    # pdm
+    if shutil.which("pdm"):
+        configured = get_pdm_configured_mirror()
+        current = get_pdm_mirror()
+        source = redact_url(configured) if configured else "默认"
+        overrides = get_source_overrides("pdm")
+        override_text = ", ".join(name for name, _ in overrides) if overrides else "无"
+        if current and configured and current != configured:
+            override_text = (
+                (override_text + "; " if override_text != "无" else "")
+                + "进程值与持久配置不同"
+            )
+        print(f"{'pdm':<8}  {source:<48}  {override_text}")
+    else:
+        print(f"{'pdm':<8}  {'未安装':<48}  -")
+
+    # poetry — 第一版仅检测是否存在，不解析具体 source
+    if shutil.which("poetry"):
+        if Path("pyproject.toml").exists():
+            source = "当前项目 (pyproject.toml，未解析具体源)"
+        else:
+            source = "已安装，当前目录无 pyproject.toml"
+        print(f"{'poetry':<8}  {source:<48}  -")
+    else:
+        print(f"{'poetry':<8}  {'未安装':<48}  -")
+
+    # conda — 显示“已检测到配置”语义，不把路径伪装成镜像源
+    if shutil.which("conda"):
+        effective = get_conda_effective_config()
+        if effective:
+            channels = effective.get("default_channels") or effective.get("channels")
+            if channels:
+                if isinstance(channels, list) and channels:
+                    preview = ", ".join(str(c) for c in channels[:2])
+                    if len(channels) > 2:
+                        preview += f" 等{len(channels)}项"
+                    source = f"已检测到配置 ({preview})"
+                else:
+                    source = "已检测到配置"
+            else:
+                source = "已检测到配置"
+        else:
+            source = f"配置文件: {get_conda_config_path()}"
+        overrides = get_source_overrides("conda")
+        override_text = ", ".join(name for name, _ in overrides) if overrides else "无"
+        print(f"{'conda':<8}  {source:<48}  {override_text}")
+    else:
+        print(f"{'conda':<8}  {'未安装':<48}  -")
+
+    print()
+    print(
+        "说明: 以上为 cnpip 检测到的配置；"
+        "运行时命令行参数或临时环境变量仍可能覆盖。"
+    )
 
 def scan_available_tools():
     """扫描当前可配置镜像源的包管理工具，返回 (名称, 状态描述) 列表。"""
@@ -1190,7 +1273,7 @@ def rollback_mirror_from_tool(tool, args):
     return False, f"不支持回滚的工具: {tool}"
 
 
-_COMMANDS = frozenset({"list", "set", "unset", "info", "sync", "update"})
+_COMMANDS = frozenset({"list", "set", "unset", "info", "status", "sync", "update"})
 
 _HELP_TEXT = """\
 cnpip - 配置 Python 包管理镜像源
@@ -1201,6 +1284,7 @@ cnpip - 配置 Python 包管理镜像源
   cnpip list              测速所有镜像
   cnpip unset             恢复 cnpip 修改前的配置
   cnpip info              显示环境和配置信息
+  cnpip status            显示各工具检测到的配置状态
   cnpip sync              更新镜像源列表
 
 选项:
@@ -1394,6 +1478,8 @@ def main():
             sys.exit(0 if success else 1)
     elif args.command == "info":
         show_info()
+    elif args.command == "status":
+        show_status()
     elif args.command == "sync":
         print("正在从远程获取最新的镜像源列表...")
         success, msg = update_mirrors_from_remote()
